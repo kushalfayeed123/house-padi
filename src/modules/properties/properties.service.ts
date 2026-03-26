@@ -15,12 +15,12 @@ export class PropertiesService {
     return await this.propertyRepository.find();
   }
 
-  async create(createPropertyDto: CreatePropertyDto): Promise<Property> {
+  // src/properties/properties.service.ts
+  async create(dto: CreatePropertyDto, userId: string): Promise<Property> {
     const newProperty = this.propertyRepository.create({
-      ...createPropertyDto,
-      price: createPropertyDto.price,
+      ...dto,
+      ownerId: userId, // Link the property to the logged-in user
     });
-
     return await this.propertyRepository.save(newProperty);
   }
 }

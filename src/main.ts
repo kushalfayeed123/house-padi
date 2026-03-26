@@ -10,7 +10,13 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // 2. Standard: Data Validation
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   // 3. Enable CORS for House Padi frontend apps
   app.enableCors();
