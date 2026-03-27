@@ -1,18 +1,28 @@
+// src/properties/dto/create-property.dto.ts
 import {
   IsString,
   IsNumber,
   IsOptional,
-  IsObject,
-  IsUUID,
   IsArray,
+  IsObject,
+  IsEnum,
+  Min,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { PropertyStatus } from '../entities/property.entity';
 
 export class CreatePropertyDto {
+  @ApiProperty({ example: 'Luxury 2-Bedroom Apartment' })
   @IsString()
   title: string;
 
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @IsNumber()
-  price: number;
+  @Min(0)
+  priceMonthly: number;
 
   @IsString()
   addressFull: string;
@@ -20,16 +30,30 @@ export class CreatePropertyDto {
   @IsString()
   location: string;
 
-  @IsArray()
-  @IsString({ each: true })
   @IsOptional()
+  @IsArray()
   images?: string[];
 
-  @IsObject()
   @IsOptional()
+  @IsObject()
+  @ApiProperty({ example: { bedrooms: 2, bathrooms: 2, parking: true } })
   features?: Record<string, any>;
 
-  @IsUUID()
   @IsOptional()
-  ownerId?: string;
+  @IsEnum(PropertyStatus)
+  status?: PropertyStatus;
+
+  @IsOptional()
+  @IsNumber()
+  lat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  lng?: number;
+
+  @ApiProperty({ example: 12 })
+  leaseDurationMonths: number;
+
+  @ApiProperty({ example: 'Standard Tenancy Agreement text...' })
+  agreementContent: string;
 }

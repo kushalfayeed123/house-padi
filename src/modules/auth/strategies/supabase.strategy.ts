@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
@@ -41,15 +40,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   // Define return type for better downstream IntelliSense (req.user)
   validate(payload: SupabaseJwtPayload) {
-    console.log(payload);
     if (!payload.sub || !payload.email) {
       throw new UnauthorizedException('Invalid token payload');
     }
 
     return {
-      id: payload.sub,
+      userId: payload.sub,
       email: payload.email,
-      role: payload.role ?? 'renter',
     };
   }
 }

@@ -1,51 +1,92 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+// src/properties/properties.controller.ts
 import {
   Controller,
   Get,
   Post,
   Body,
-  UsePipes,
-  ValidationPipe,
+  Param,
   UseGuards,
+  Query,
+  Delete,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { PropertiesService } from './properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
-import { Property } from './entities/property.entity';
-import { GetUser } from 'src/common/decorators/user.decorator';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { GetUser } from 'src/common/decorators/user.decorator';
+import { UpdatePropertyDto } from './dto/update-property.dto';
+import { SearchPropertyDto } from './dto/search-property.dto';
 
 @ApiTags('Properties')
-@ApiBearerAuth() // <--- Add this!
+@ApiBearerAuth()
 @Controller('properties')
 export class PropertiesController {
   constructor(private readonly propertiesService: PropertiesService) {}
 
-  @Get()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get all properties' })
-  async findAll(): Promise<Property[]> {
-    return this.propertiesService.findAll();
-  }
-
   @Post()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Create a new property' })
-  @ApiResponse({
-    status: 201,
-    description: 'The property has been successfully created.',
-    type: Property,
-  })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async create(
-    @GetUser('userId') userId: string, // Automatically gets the UUID from the JWT
-    @Body() createPropertyDto: CreatePropertyDto,
-  ): Promise<Property> {
-    // No more 'as any'! TypeORM works natively with your DTOs and Entities.
-    return await this.propertiesService.create(createPropertyDto, userId);
+  @ApiOperation({ summary: 'List a new property' })
+  async create(@Body() dto: CreatePropertyDto, @GetUser('id') ownerId: string) {
+    return this.propertiesService.create(dto, ownerId);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Browse properties' })
+  @ApiQuery({ name: 'limit', required: false })
+  async findAll(@Query('limit') limit?: number) {
+    return this.propertiesService.findAll(limit);
+  }
+
+  @Get('my-listings')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Owners view their own properties' })
+  async getMyListings(@GetUser('id') ownerId: string) {
+    return this.propertiesService.findByOwner(ownerId);
+  }
+
+  @Get('search')
+  async search(@Query() query: SearchPropertyDto) {
+    const tagArray = query.tags
+      ? query.tags
+          .split(',')
+          .map((t) => t.trim().toLowerCase())
+          .filter((t) => t !== '')
+      : [];
+
+    return this.propertiesService.findAiRecommended({
+      ...query,
+      tags: tagArray as any,
+    });
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get details of a single property' })
+  async findOne(@Param('id') id: string) {
+    return this.propertiesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Update a property listing' })
+  async update(
+    @Param('id') id: string,
+    @GetUser('id') ownerId: string,
+    @Body() dto: UpdatePropertyDto,
+  ) {
+    return this.propertiesService.update(id, ownerId, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Delete a property listing' })
+  async remove(@Param('id') id: string, @GetUser('id') ownerId: string) {
+    return this.propertiesService.remove(id, ownerId);
   }
 }
