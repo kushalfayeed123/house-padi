@@ -11,6 +11,12 @@ import { Transaction } from './entities/transaction.entity';
 import { LeaseService } from './services/lease/lease.service';
 import { TourService } from './services/tour/tour.service';
 import { Profile } from '../profile/entities/profile.entity';
+import { ContractService } from './services/contract/contract.service';
+import { LedgerService } from '../finance/services/ledger/ledger.service';
+import { PayoutService } from '../finance/services/payout/payout.service';
+import { StorageService } from 'src/common/storage.service';
+import { FinanceModule } from '../finance/finance.module';
+import { AiService } from 'src/common/ai.service';
 
 @Module({
   imports: [
@@ -21,9 +27,18 @@ import { Profile } from '../profile/entities/profile.entity';
       Transaction,
       Profile,
     ]),
+    FinanceModule,
   ],
   controllers: [RentingController],
-  providers: [TourService, LeaseService],
+  providers: [
+    TourService,
+    LeaseService,
+    ContractService,
+    LedgerService,
+    PayoutService,
+    StorageService,
+    AiService,
+  ],
   exports: [LeaseService], // Export if other modules need to check lease status
 })
 export class RentingModule {}

@@ -8,12 +8,8 @@ import {
 } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
 import { BankDetail } from './bank-details.entity';
-
-export enum KycStatus {
-  PENDING = 'pending',
-  VERIFIED = 'verified',
-  REJECTED = 'rejected',
-}
+import { KycVerification } from './kyc-veirifcation.entity';
+import { KycStatus } from '../enums/kyc-status.enum';
 
 @Entity({ name: 'profiles' })
 export class Profile {
@@ -38,6 +34,9 @@ export class Profile {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
+  @Column({ name: 'phone_number', nullable: true })
+  phoneNumber: string;
+
   @OneToMany(() => Property, (property) => property.owner)
   properties: Property[];
 
@@ -48,16 +47,9 @@ export class Profile {
     default: KycStatus.PENDING,
   })
   kycStatus: KycStatus;
-
-  @Column({ name: 'id_type', nullable: true })
-  idType: string; // NIN, BVN, Passport
-
-  @Column({ name: 'id_number', nullable: true })
-  idNumber: string;
+  @OneToOne(() => KycVerification, (kyc) => kyc.profile)
+  kyc: KycVerification; // This links to the detailed KYC record
 
   @OneToOne(() => BankDetail, (bank) => bank.profile)
   bankDetail: BankDetail;
-
-  @Column({ name: 'id_image_url', nullable: true })
-  idImageUrl: string;
 }

@@ -17,12 +17,12 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { PropertiesService } from './properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { GetUser } from 'src/common/decorators/user.decorator';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { SearchPropertyDto } from './dto/search-property.dto';
+import { PropertiesService } from './services/properties.service';
 
 @ApiTags('Properties')
 @ApiBearerAuth()
@@ -33,7 +33,10 @@ export class PropertiesController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List a new property' })
-  async create(@Body() dto: CreatePropertyDto, @GetUser('id') ownerId: string) {
+  async create(
+    @Body() dto: CreatePropertyDto,
+    @GetUser('userId') ownerId: string,
+  ) {
     return this.propertiesService.create(dto, ownerId);
   }
 
@@ -47,7 +50,7 @@ export class PropertiesController {
   @Get('my-listings')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Owners view their own properties' })
-  async getMyListings(@GetUser('id') ownerId: string) {
+  async getMyListings(@GetUser('userId') ownerId: string) {
     return this.propertiesService.findByOwner(ownerId);
   }
 
@@ -77,7 +80,7 @@ export class PropertiesController {
   @ApiOperation({ summary: 'Update a property listing' })
   async update(
     @Param('id') id: string,
-    @GetUser('id') ownerId: string,
+    @GetUser('userId') ownerId: string,
     @Body() dto: UpdatePropertyDto,
   ) {
     return this.propertiesService.update(id, ownerId, dto);
@@ -86,7 +89,7 @@ export class PropertiesController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Delete a property listing' })
-  async remove(@Param('id') id: string, @GetUser('id') ownerId: string) {
+  async remove(@Param('id') id: string, @GetUser('userId') ownerId: string) {
     return this.propertiesService.remove(id, ownerId);
   }
 }

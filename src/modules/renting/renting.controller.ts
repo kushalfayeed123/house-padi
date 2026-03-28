@@ -4,7 +4,6 @@ import {
   UseGuards,
   Post,
   Body,
-  Req,
   Patch,
   Param,
   Get,
@@ -17,13 +16,7 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { LeaseService } from './services/lease/lease.service';
 import { TourService } from './services/tour/tour.service';
 import { PaymentCompleteDto } from './dto/payment-complete.dto';
-
-interface RequestWithUser extends Request {
-  user: {
-    id: string;
-    // add other fields if needed, e.g., role: string;
-  };
-}
+import { GetUser } from 'src/common/decorators/user.decorator';
 
 @ApiTags('Renting')
 @ApiBearerAuth()
@@ -39,11 +32,11 @@ export class RentingController {
   @Post('interest')
   async expressInterest(
     @Body() body: InterestDto, // Use DTO
-    @Req() req: RequestWithUser,
+    @GetUser('userId') renterId: string,
   ) {
     return await this.tourService.createApplication(
       body.propertyId,
-      req.user.id,
+      renterId,
       body.tourDate,
     );
   }
@@ -52,22 +45,20 @@ export class RentingController {
   @UseGuards(JwtAuthGuard)
   async updateStatus(
     @Param('id') id: string,
-    @Body() body: UpdateStatusDto, // Ensure this uses the DTO class
-    @Req() req: RequestWithUser,
+    @Body() body: UpdateStatusDto,
+    @GetUser('userId') ownerId: string,
   ) {
-    // Pass body.status (the string), not the whole body (the object)
-    return this.tourService.updateApplicationStatus(
-      id,
-      body.status,
-      req.user.id,
-    );
+    return this.tourService.updateApplicationStatus(id, body.status, ownerId);
   }
 
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard) // Added missing guard
-  @Post('application/:id/generate-lease')
-  async initiateLease(@Param('id') id: string, @Req() req: RequestWithUser) {
-    return this.leaseService.prepareLease(id, req.user.id);
+  @UseGuards(JwtAuthGuard)
+  @Post('application/:id/generate-lease/:renterId')
+  async initiateLease(
+    @Param('id') id: string,
+    @Param('renterId') renterId: string,
+  ) {
+    return this.leaseService.prepareLease(id, renterId);
   }
 
   @Post('webhook/payment-complete')
@@ -85,8 +76,8 @@ export class RentingController {
   @Get('my-applications')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all house applications sent by the user' })
-  async getMyApplications(@Req() req: RequestWithUser) {
-    return this.tourService.getUserApplications(req.user.id);
+  async getMyApplications(@GetUser('userId') renterId: string) {
+    return this.tourService.getUserApplications(renterId);
   }
 
   // Fetch all applications received for a specific property (as an Owner)
@@ -97,24 +88,27 @@ export class RentingController {
   })
   getPropertyApplications(
     @Param('propertyId') propertyId: string,
-    @Req() req: RequestWithUser,
+    @GetUser('userId') ownerId: string,
   ) {
-    return this.tourService.getPropertyApplications(propertyId, req.user.id);
+    return this.tourService.getPropertyApplications(propertyId, ownerId);
   }
 
   // Fetch lease agreements for the user (to sign or view)
   @Get('my-leases')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all lease agreements (signed and pending)' })
-  async getMyLeases(@Req() req: RequestWithUser) {
-    return this.leaseService.getUserLeases(req.user.id);
+  async getMyLeases(@GetUser('userId') userId: string) {
+    return this.leaseService.getUserLeases(userId);
   }
 
   // Decline a lease agreement
   @Delete('lease/:id/decline')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Decline/Cancel a lease agreement before payment' })
-  async declineLease(@Param('id') id: string, @Req() req: RequestWithUser) {
-    return this.leaseService.declineLease(id, req.user.id);
+  async declineLease(
+    @Param('id') id: string,
+    @GetUser('userId') ownerId: string,
+  ) {
+    return this.leaseService.declineLease(id, ownerId);
   }
 }

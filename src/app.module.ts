@@ -5,11 +5,15 @@ import { PropertiesModule } from './modules/properties/properties.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RentingModule } from './modules/renting/renting.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { FinanceModule } from './modules/finance/finance.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     AuthModule,
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -21,7 +25,7 @@ import { RentingModule } from './modules/renting/renting.module';
         password: config.get<string>('DB_PASSWORD'),
         database: config.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: false,
+        synchronize: true,
         ssl: {
           rejectUnauthorized: false,
         },
@@ -34,6 +38,8 @@ import { RentingModule } from './modules/renting/renting.module';
     PropertiesModule,
     ProfileModule,
     RentingModule,
+    FinanceModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

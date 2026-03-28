@@ -6,6 +6,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
+import { Profile } from 'src/modules/profile/entities/profile.entity';
 
 @Entity('leases')
 export class Lease {
@@ -28,12 +29,12 @@ export class Lease {
   startDate: Date;
 
   @Column({
-    name: 'monthly_rent', // Match the DB name
+    name: 'rent', // Match the DB name
     type: 'numeric',
     precision: 12,
     scale: 2,
   })
-  monthlyRent: number;
+  rent: number;
 
   @Column({
     name: 'contract_url', // Match the DB name
@@ -50,4 +51,8 @@ export class Lease {
   @ManyToOne(() => Property)
   @JoinColumn({ name: 'property_id' })
   property: Property;
+
+  @ManyToOne(() => Profile)
+  @JoinColumn({ name: 'renter_id' })
+  renter: Profile;
 }

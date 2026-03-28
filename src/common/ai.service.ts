@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 // src/properties/ai.service.ts
@@ -49,7 +50,7 @@ export class AiService {
 
     const model = this.genAI.getGenerativeModel({
       // CHANGE THIS: 'gemini-1.5-flash' -> 'gemini-3-flash-preview' (or 'gemini-2.5-flash')
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3.1-pro-preview',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema,
@@ -60,6 +61,12 @@ export class AiService {
       Analyze this property listing and extract structured data.
       Title: ${title}
       Description: ${description}
+
+      CRITICAL INSTRUCTIONS FOR TAGS:
+      1. Always include the bedroom and bathroom count as tags (e.g., "3 bedrooms", "2 bathrooms").
+      2. Include the property type if found (e.g., "apartment", "duplex").
+      3. Include the location mentioned in the text.
+      4. Add 3-5 "vibe" tags (e.g., "luxury", "student-friendly").
     `;
 
     try {

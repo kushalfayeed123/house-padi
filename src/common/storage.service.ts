@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 // src/modules/common/storage.service.ts
 import { Injectable } from '@nestjs/common';
 import { createClient } from '@supabase/supabase-js';
@@ -34,6 +30,24 @@ export class StorageService {
     const { data: urlData } = this.supabase.storage
       .from('house-padi-assets')
       .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  }
+
+  async uploadFile(
+    path: string,
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<string> {
+    const { error } = await this.supabase.storage
+      .from('house-padi-assets')
+      .upload(path, buffer, { contentType: mimeType, upsert: true });
+
+    if (error) throw error;
+
+    const { data: urlData } = this.supabase.storage
+      .from('house-padi-assets')
+      .getPublicUrl(path);
 
     return urlData.publicUrl;
   }

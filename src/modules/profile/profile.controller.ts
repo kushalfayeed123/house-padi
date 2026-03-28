@@ -6,7 +6,6 @@ import {
   UseGuards,
   Post,
   Put,
-  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -24,16 +23,6 @@ import { UpdateBankDetailsDto } from './dto/update-bank-details.dto';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 
-export interface ActiveUser {
-  id: string;
-  email: string;
-  role: string;
-}
-
-export interface RequestWithUser extends Request {
-  user: ActiveUser;
-}
-
 @ApiTags('Profiles')
 @ApiBearerAuth()
 @Controller('profiles')
@@ -44,7 +33,6 @@ export class ProfilesController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get current user profile' })
   getMe(@GetUser('userId') userId: string) {
-    console.log(userId);
     return this.profilesService.findOne(userId);
   }
 
@@ -62,22 +50,22 @@ export class ProfilesController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update owner payout bank details' })
   async updateBank(
-    @Req() req: RequestWithUser,
+    @GetUser('userId') userId: string,
     @Body() dto: UpdateBankDetailsDto,
   ) {
-    return this.profilesService.updateBankDetails(req.user.id, dto);
+    return this.profilesService.updateBankDetails(userId, dto);
   }
 
   @Post('kyc')
-  @UseInterceptors(FileInterceptor('idImage')) // 'idImage' is the key from your Flutter form
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('idImage'))
   @ApiOperation({ summary: 'Submit ID and image for KYC' })
-  @ApiConsumes('multipart/form-data') // <--- Crucial for Swagger
+  @ApiConsumes('multipart/form-data')
   async submitKyc(
-    @Req() req: RequestWithUser,
+    @GetUser('userId') userId: string,
     @Body() dto: CompleteKycDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    const userId = (req.user ?? '').id;
     return this.profilesService.submitKyc(userId, dto, file);
   }
 }

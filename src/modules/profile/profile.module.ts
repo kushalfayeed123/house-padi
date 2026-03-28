@@ -5,11 +5,12 @@ import { ProfilesController } from './profile.controller';
 import { ProfilesService } from './profile.service';
 import { BankDetail } from './entities/bank-details.entity';
 import { StorageService } from 'src/common/storage.service';
+import { KycVerification } from './entities/kyc-veirifcation.entity';
 
 @Module({
   imports: [
     // This creates the Repository for injection
-    TypeOrmModule.forFeature([Profile, BankDetail]),
+    TypeOrmModule.forFeature([Profile, BankDetail, KycVerification]),
   ],
   controllers: [ProfilesController],
   providers: [ProfilesService, StorageService],

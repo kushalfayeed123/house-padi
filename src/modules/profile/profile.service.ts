@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { KycStatus, Profile } from './entities/profile.entity';
+import { Profile } from './entities/profile.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { BankDetail } from './entities/bank-details.entity';
 import { CompleteKycDto } from './dto/complete-kyc.dto';
 import { UpdateBankDetailsDto } from './dto/update-bank-details.dto';
 import { StorageService } from 'src/common/storage.service';
+import { KycVerification } from './entities/kyc-veirifcation.entity';
+import { KycStatus } from './enums/kyc-status.enum';
 
 @Injectable()
 export class ProfilesService {
@@ -15,6 +17,8 @@ export class ProfilesService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(BankDetail) private bankRepo: Repository<BankDetail>,
     private readonly storageService: StorageService,
+    @InjectRepository(KycVerification)
+    private kycRepo: Repository<KycVerification>,
   ) {}
 
   async findAll(): Promise<Profile[]> {
@@ -22,11 +26,9 @@ export class ProfilesService {
   }
 
   async findOne(id: string): Promise<Profile> {
-    console.log(id);
-
     const profile = await this.profileRepo.findOne({
       where: { id },
-      relations: ['properties'],
+      relations: ['bankDetail', 'properties', 'kyc'],
     });
     if (!profile) throw new NotFoundException('Profile not found');
     return profile;
@@ -61,19 +63,38 @@ export class ProfilesService {
     dto: CompleteKycDto,
     file: Express.Multer.File,
   ) {
+    // 1. Validate User
     const profile = await this.profileRepo.findOne({ where: { id: userId } });
     if (!profile) throw new NotFoundException('Profile not found');
 
-    // 1. Upload the file to your Storage Bucket
-    // path: kyc-documents/{userId}/{filename}
+    // 2. Upload file (userId ensures the path is correct: kyc-documents/{userId}/...)
     const fileUrl = await this.storageService.uploadKycDoc(userId, file);
 
-    // 2. Update Profile with ID info and the document link
-    profile.idType = dto.idType;
-    profile.idNumber = dto.idNumber;
-    profile.idImageUrl = fileUrl; // Add this column to your Profile Entity if missing
-    profile.kycStatus = KycStatus.PENDING; // Needs manual admin review now!
+    // 3. Find existing KYC or create new one
+    let kyc = await this.kycRepo.findOne({ where: { userId } });
+    if (kyc) {
+      kyc.idType = dto.idType;
+      kyc.idNumber = dto.idNumber;
+      kyc.idImageUrl = fileUrl;
+      kyc.status = KycStatus.PENDING;
+      kyc.rejectionReason = ''; // Clear old reason if they are re-submitting
+    } else {
+      kyc = this.kycRepo.create({
+        userId: userId,
+        idType: dto.idType,
+        idNumber: dto.idNumber,
+        idImageUrl: fileUrl,
+        status: KycStatus.PENDING,
+      });
+    }
 
-    return await this.profileRepo.save(profile);
+    // 4. Save the detailed KYC record
+    await this.kycRepo.save(kyc);
+
+    // 5. Update the flag on the profile for fast UI checks
+    profile.kycStatus = KycStatus.PENDING;
+    await this.profileRepo.save(profile);
+
+    return kyc;
   }
 }

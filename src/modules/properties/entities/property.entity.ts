@@ -47,8 +47,8 @@ export class Property {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @Column({ name: 'price_monthly', type: 'numeric', precision: 12, scale: 2 })
-  priceMonthly: number;
+  @Column({ name: 'price', type: 'numeric', precision: 12, scale: 2 })
+  price: number;
 
   @Column({ length: 3, default: 'USD' })
   currency: string;

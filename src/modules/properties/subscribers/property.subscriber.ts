@@ -8,9 +8,9 @@ import {
   InsertEvent,
   DataSource,
 } from 'typeorm';
-import { AiService } from '../ai.service';
+import { AiService } from '../../../common/ai.service';
 import { Property } from '../entities/property.entity';
-import { PropertiesService } from '../properties.service';
+import { PropertiesService } from '../services/properties.service';
 
 @EventSubscriber()
 export class PropertySubscriber implements EntitySubscriberInterface<Property> {
@@ -31,6 +31,8 @@ export class PropertySubscriber implements EntitySubscriberInterface<Property> {
     if (!description) return;
 
     // This is the magic part: it takes the AI call OUT of the database transaction
+    // src/properties/subscribers/property.subscriber.ts
+
     setImmediate(async () => {
       try {
         const aiResult = await this.aiService.analyzeProperty(
@@ -39,15 +41,29 @@ export class PropertySubscriber implements EntitySubscriberInterface<Property> {
         );
 
         if (aiResult) {
-          // We use the ID here to get a fresh reference since the transaction is over
+          const { features, tags, ai_summary } = aiResult;
+
+          // --- SAFETY MERGE: Ensure physical counts are in the tags ---
+          const physicalTags = [];
+          if (features.bedrooms)
+            physicalTags.push(`${features.bedrooms} bedrooms`);
+          if (features.bathrooms)
+            physicalTags.push(`${features.bathrooms} bathrooms`);
+          if (features.furnished) physicalTags.push('furnished');
+
+          // Combine AI tags with our guaranteed physical tags, removing duplicates
+          const finalTags = [...new Set([...tags, ...physicalTags])];
+
+          // 1. Update Metadata (Tags)
           await this.propertiesService.updateAiMetadata(
-            event?.entity,
-            aiResult.tags,
+            event.entity,
+            finalTags,
           );
 
+          // 2. Update Features
           await this.propertiesService.updatePropertyFeatures(event.entity, {
-            ...aiResult.features,
-            summary: aiResult.ai_summary,
+            ...features,
+            summary: ai_summary,
           });
 
           console.log(

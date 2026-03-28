@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { PropertiesService } from './properties.service';
 import { PropertiesController } from './properties.controller';
 import { Property } from './entities/property.entity';
 import { AuthModule } from '../auth/auth.module';
 import { PropertySubscriber } from './subscribers/property.subscriber';
-import { AiService } from './ai.service';
+import { AiService } from '../../common/ai.service';
 import { Profile } from '../profile/entities/profile.entity';
+import { PropertiesService } from './services/properties.service';
 
 @Module({
   imports: [

@@ -9,12 +9,13 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Profile } from 'src/modules/profile/entities/profile.entity';
+import { KycStatus } from 'src/modules/profile/enums/kyc-status.enum';
 import { Repository } from 'typeorm';
-import { Property, PropertyStatus } from './entities/property.entity';
-import { CreatePropertyDto } from './dto/create-property.dto';
-import { UpdatePropertyDto } from './dto/update-property.dto';
-import { SearchPropertyDto } from './dto/search-property.dto';
-import { KycStatus, Profile } from '../profile/entities/profile.entity';
+import { CreatePropertyDto } from '../dto/create-property.dto';
+import { SearchPropertyDto } from '../dto/search-property.dto';
+import { UpdatePropertyDto } from '../dto/update-property.dto';
+import { Property, PropertyStatus } from '../entities/property.entity';
 
 @Injectable()
 export class PropertiesService {
@@ -30,7 +31,7 @@ export class PropertiesService {
       // 1. Fetch profile using 'id' (which is the Supabase UID)
       const profile = await this.profileRepo.findOne({
         where: { id: ownerId }, // Use 'id' instead of 'userId'
-        relations: ['bankDetail'],
+        relations: ['bankDetail', 'kyc'],
       });
 
       if (!profile) {
@@ -38,7 +39,7 @@ export class PropertiesService {
       }
 
       // 2. Business Logic: KYC Check
-      if (profile.kycStatus !== KycStatus.VERIFIED) {
+      if (profile.kyc.status !== KycStatus.VERIFIED) {
         throw new ForbiddenException(
           'KYC verification required to list properties.',
         );
@@ -103,76 +104,83 @@ export class PropertiesService {
   async findByOwner(ownerId: string): Promise<Property[]> {
     return await this.propertyRepo.find({ where: { ownerId } });
   }
-
   async findAiRecommended(dto: SearchPropertyDto): Promise<Property[]> {
-    // Destructure for easier use inside the method
     const { location, address, maxPrice, lat, lng, radius = 5 } = dto;
 
-    // Important: Use the tags we processed in the controller
-    const tags = dto.tags as unknown as string[];
+    // 1. Ensure tags are handled as an array (even if a single string comes from the URL)
+    let tags: string[] = [];
+    if (dto.tags) {
+      tags = Array.isArray(dto.tags)
+        ? dto.tags
+        : dto.tags.split(',').map((t) => t.trim());
+    }
 
-    const getBaseQuery = () => {
-      const qb = this.propertyRepo.createQueryBuilder('property');
-      qb.andWhere('property.status = :status', { status: 'available' });
+    // 2. Initialize the Base Query
+    const qb = this.propertyRepo.createQueryBuilder('property');
 
-      // Geospatial Logic
-      if (lat && lng) {
+    // Only show active listings
+    qb.andWhere('property.status = :status', { status: 'available' });
+
+    // 3. Geospatial Logic (PostGIS)
+    if (lat && lng) {
+      qb.andWhere(
+        `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
+        { lng, lat, dist: radius * 1000 },
+      );
+      qb.addOrderBy(
+        `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
+        'ASC',
+      );
+    }
+
+    // 4. Standard Filters (Location, Address, Price)
+    if (location?.trim()) {
+      qb.andWhere('LOWER(property.location) = LOWER(:location)', { location });
+    }
+
+    if (address?.trim()) {
+      qb.andWhere('property.address_full ILIKE :address', {
+        address: `%${address}%`,
+      });
+    }
+
+    if (maxPrice) {
+      qb.andWhere('property.priceMonthly <= :maxPrice', { maxPrice });
+    }
+
+    // 5. Advanced Partial Tag Matching (The "AI-Recommended" Logic)
+    if (tags.length > 0) {
+      tags.forEach((tag, index) => {
+        const paramName = `tag_${index}`;
+
+        /**
+         * We use EXISTS with a subquery to unnest the JSONB array.
+         * This allows us to use ILIKE (Case-Insensitive Partial Match)
+         * on every individual tag stored in metadata.
+         */
         qb.andWhere(
-          `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
-          { lng, lat, dist: radius * 1000 },
+          `EXISTS (
+          SELECT 1 
+          FROM jsonb_array_elements_text(property.metadata->'search_tags') AS tag_element
+          WHERE tag_element ILIKE :${paramName}
+        )`,
+          { [paramName]: `%${tag}%` },
         );
-        qb.addOrderBy(
-          `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
-          'ASC',
-        );
-      }
-
-      // Standard Filters
-      if (location?.trim()) {
-        qb.andWhere('LOWER(property.location) = LOWER(:location)', {
-          location,
-        });
-      }
-      if (address?.trim()) {
-        qb.andWhere('property.address_full ILIKE :address', {
-          address: `%${address}%`,
-        });
-      }
-      if (maxPrice) {
-        qb.andWhere('property.priceMonthly <= :maxPrice', { maxPrice });
-      }
-
-      qb.orderBy('property.isFeatured', 'DESC').addOrderBy(
-        'property.createdAt',
-        'DESC',
-      );
-      return qb;
-    };
-
-    // Logic for Discovery vs AI Search
-    if (!tags || tags.length === 0) {
-      return await getBaseQuery().getMany();
+      });
     }
 
-    // 2. If tags EXIST, perform the AI-Matching logic
-    const exactQuery = getBaseQuery();
-    exactQuery.andWhere(`property.metadata->'search_tags' @> :tags`, {
-      tags: JSON.stringify(tags),
-    });
+    // 6. Final Sorting
+    qb.addOrderBy('property.isFeatured', 'DESC');
+    qb.addOrderBy('property.createdAt', 'DESC');
 
-    const results = await exactQuery.getMany();
-
-    // 3. Fallback to Partial Match if exact tags fail
-    if (results.length === 0) {
-      const partialQuery = getBaseQuery();
-      partialQuery.andWhere(
-        `jsonb_exists_any(property.metadata->'search_tags', :tags::text[])`,
-        { tags },
+    try {
+      return await qb.getMany();
+    } catch (error) {
+      console.error('Search Query Failed:', error);
+      throw new InternalServerErrorException(
+        'Could not complete property search',
       );
-      return await partialQuery.getMany();
     }
-
-    return results;
   }
 
   async updateAiMetadata(property: Property, aiTags: string[]): Promise<void> {
