@@ -22,7 +22,7 @@ export class CreatePropertyDto {
 
   @IsNumber()
   @Min(0)
-  priceMonthly: number;
+  price: number;
 
   @IsString()
   addressFull: string;

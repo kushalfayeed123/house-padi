@@ -1,5 +1,6 @@
 // src/properties/entities/property.entity.ts
 import { ApiProperty } from '@nestjs/swagger';
+import { PropertyAnalysis } from 'src/common/schemas/property-analysis.schema';
 import { Profile } from 'src/modules/profile/entities/profile.entity';
 import {
   Entity,
@@ -63,7 +64,7 @@ export class Property {
   images: string[];
 
   @Column({ type: 'jsonb', default: {} })
-  features: Record<string, any>;
+  features: PropertyAnalysis['features'];
 
   @Column({ type: 'enum', enum: PropertyStatus, default: PropertyStatus.DRAFT })
   status: PropertyStatus;
@@ -98,4 +99,13 @@ export class Property {
     nullable: true,
   })
   coords: { type: 'Point'; coordinates: [number, number] };
+
+  @Column({
+    type: 'vector',
+    nullable: true,
+    length: 384,
+  })
+  embedding: number[];
+  @Column({ type: 'text', nullable: true })
+  aiSummary: string; // Ensure this matches exactly what you use in the .find()
 }

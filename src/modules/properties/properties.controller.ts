@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 // src/properties/properties.controller.ts
 import {
   Controller,
@@ -55,17 +55,23 @@ export class PropertiesController {
   }
 
   @Get('search')
+  @ApiOperation({ summary: 'AI-Powered Hybrid Search' })
   async search(@Query() query: SearchPropertyDto) {
-    const tagArray = query.tags
-      ? query.tags
-          .split(',')
-          .map((t) => t.trim().toLowerCase())
-          .filter((t) => t !== '')
-      : [];
+    let tagArray: string[] = [];
+
+    if (query.tags) {
+      // Handle cases where tags might already be an array or a comma-separated string
+      tagArray = Array.isArray(query.tags)
+        ? query.tags
+        : query.tags
+            .split(',')
+            .map((t) => t.trim().toLowerCase())
+            .filter((t) => t !== '');
+    }
 
     return this.propertiesService.findAiRecommended({
       ...query,
-      tags: tagArray as any,
+      tags: tagArray, // Now TypeScript is happy because 'tags' accepts string[]
     });
   }
 

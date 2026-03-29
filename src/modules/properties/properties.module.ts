@@ -7,6 +7,8 @@ import { PropertySubscriber } from './subscribers/property.subscriber';
 import { AiService } from '../../common/ai.service';
 import { Profile } from '../profile/entities/profile.entity';
 import { PropertiesService } from './services/properties.service';
+import { ChatBotService } from 'src/common/chat-bot.service';
+import { AiSyncService } from './services/ai-sync.service';
 
 @Module({
   imports: [
@@ -15,6 +17,12 @@ import { PropertiesService } from './services/properties.service';
     AuthModule,
   ],
   controllers: [PropertiesController],
-  providers: [PropertiesService, PropertySubscriber, AiService],
+  providers: [
+    PropertiesService,
+    PropertySubscriber,
+    AiService,
+    ChatBotService,
+    AiSyncService,
+  ],
 })
 export class PropertiesModule {}

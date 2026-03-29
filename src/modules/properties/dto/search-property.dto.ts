@@ -12,7 +12,7 @@ import { Type } from 'class-transformer';
 export class SearchPropertyDto {
   @IsOptional()
   @IsString()
-  tags?: string;
+  tags?: string | string[];
 
   @IsOptional()
   @IsString()
@@ -49,4 +49,8 @@ export class SearchPropertyDto {
   @IsPositive()
   @Max(50) // Limit search to 50km to keep queries performant
   radius?: number;
+
+  @IsOptional()
+  @IsString()
+  chatPrompt?: string; // <--- The "Vibe" search input
 }

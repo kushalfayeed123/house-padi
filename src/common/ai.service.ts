@@ -1,81 +1,170 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
+
 // src/properties/ai.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
+import { env, pipeline } from '@xenova/transformers';
+import {
+  AnalysisSchema,
+  PropertyAnalysis,
+} from './schemas/property-analysis.schema';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
-export class AiService {
+export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
-  private genAI: GoogleGenerativeAI;
+  private extractor: any;
 
-  constructor(private configService: ConfigService) {
-    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    this.genAI = new GoogleGenerativeAI(apiKey!);
-  }
+  constructor(private configService: ConfigService) {}
 
-  async analyzeProperty(title: string, description: string) {
-    // 1. Define the exact shape of data we want back
-    const schema: Schema = {
-      description: 'Property features and search tags extraction',
-      type: SchemaType.OBJECT,
-      properties: {
-        tags: {
-          type: SchemaType.ARRAY,
-          description:
-            "List of 5-10 SEO and 'vibe' tags (e.g., quiet, luxury, student-friendly)",
-          items: { type: SchemaType.STRING },
-        },
-        features: {
-          type: SchemaType.OBJECT,
-          description:
-            'Key-value pairs of physical features discovered in text',
-          properties: {
-            bedrooms: { type: SchemaType.NUMBER },
-            bathrooms: { type: SchemaType.NUMBER },
-            has_electricity_backup: { type: SchemaType.BOOLEAN },
-            furnished: { type: SchemaType.BOOLEAN },
-          },
-        },
-        ai_summary: {
-          type: SchemaType.STRING,
-          description:
-            'A 1-sentence catchy summary for the search results page',
-        },
-      },
-      required: ['tags', 'features', 'ai_summary'],
-    };
-
-    const model = this.genAI.getGenerativeModel({
-      // CHANGE THIS: 'gemini-1.5-flash' -> 'gemini-3-flash-preview' (or 'gemini-2.5-flash')
-      model: 'gemini-3.1-pro-preview',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: schema,
-      },
-    });
-
-    const prompt = `
-      Analyze this property listing and extract structured data.
-      Title: ${title}
-      Description: ${description}
-
-      CRITICAL INSTRUCTIONS FOR TAGS:
-      1. Always include the bedroom and bathroom count as tags (e.g., "3 bedrooms", "2 bathrooms").
-      2. Include the property type if found (e.g., "apartment", "duplex").
-      3. Include the location mentioned in the text.
-      4. Add 3-5 "vibe" tags (e.g., "luxury", "student-friendly").
-    `;
+  async onModuleInit() {
+    // Disable remote checking of the model once it is downloaded
+    env.allowRemoteModels = true;
+    env.localModelPath = './models'; // Save models locally in your project
 
     try {
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
-      return JSON.parse(responseText);
+      this.extractor = await pipeline(
+        'feature-extraction',
+        'Xenova/all-MiniLM-L6-v2',
+        {
+          // You can pass progress callbacks to see if it's actually moving
+          progress_callback: (data: any) => {
+            if (data.status === 'progress') {
+              console.log(
+                `Downloading AI Model: ${data.file} - ${data.progress.toFixed(2)}%`,
+              );
+            }
+          },
+        },
+      );
+      console.log('AI Embedding Model loaded successfully.');
     } catch (error) {
-      this.logger.error('Gemini Analysis failed:', error.message);
-      return null;
+      console.error(
+        'Failed to load AI model. Check your internet connection.',
+        error,
+      );
+      // In production, you might want to throw a specific error here
     }
+  }
+
+  async fetchWithRetry(url: string, options: any, retries = 3, backoff = 1000) {
+    for (let i = 0; i < retries; i++) {
+      const response = await fetch(url, options);
+
+      // If it's a 429 (Rate Limit) or 5xx (Server Error), wait and retry
+      if (response.status === 429 || response.status >= 500) {
+        const delay = backoff * Math.pow(2, i); // 1s, 2s, 4s...
+        this.logger.warn(`AI Rate limited. Retrying in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      return response;
+    }
+    return fetch(url, options); // Final attempt
+  }
+
+  async analyzeProperty(
+    title: string,
+    description: string,
+    location: string,
+  ): Promise<PropertyAnalysis> {
+    // Update your system prompt to this:
+    const systemPrompt = `You are a Lagos Real Estate Marketing Expert. 
+          Return ONLY a JSON object with this exact structure:
+          {
+            "ai_summary": "A 2-sentence captivating sales pitch.",
+            search_tags: 8-10 keywords for search indexing (e.g. "Lekki Phase 1", "Serviced", "Near University").
+            "features": {
+              "bedrooms": number,
+              "bathrooms": number,
+              "is_luxury": boolean,
+              "has_electricity_backup": boolean,
+              "furnished": boolean
+            }
+          }
+
+          CRITICAL: 
+          - If title says '2 bedroom', set features.bedrooms to 2.
+          - If title says 'en suite', set features.bathrooms to match bedrooms.
+          - Location: ${location || 'Lekki'}`;
+
+    const fallback: PropertyAnalysis = {
+      search_tags: ['Property'],
+      features: {
+        bedrooms: 0,
+        bathrooms: 0,
+        has_electricity_backup: false,
+        furnished: false,
+        is_luxury: true,
+      },
+      ai_summary: title,
+    };
+
+    try {
+      const response = await this.fetchWithRetry(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.configService.get<string>('OPENROUTER_API_KEY')}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://housepadi.com',
+            'X-Title': 'HousePadi NestJS',
+          },
+          body: JSON.stringify({
+            model: 'openrouter/free', // Automatically picks the best available free model
+            messages: [
+              {
+                role: 'system',
+                content: systemPrompt,
+              },
+              {
+                role: 'user',
+                content: `Title: ${title}\nDescription: ${description}\nLocation: ${location || 'Not specified'}`,
+              },
+            ],
+            response_format: { type: 'json_object' },
+            max_tokens: 1000,
+            temperature: 0.1, // Keep it precise
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`OpenRouter HTTP ${response.status}: ${errorData}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+
+      if (!content) throw new Error('AI returned an empty response');
+
+      const parsed = JSON.parse(content);
+      const validated = AnalysisSchema.parse(parsed);
+
+      // 💡 MANUALLY MAP ai_summary to aiSummary if your schema needs it
+      return {
+        ...validated,
+        ai_summary: validated.ai_summary || validated.ai_summary,
+        search_tags: validated.search_tags, // Safety check
+      };
+    } catch (e) {
+      this.logger.error(`AI Analysis final failure: ${e.message}`);
+      return fallback;
+    }
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    const output = await this.extractor(text, {
+      pooling: 'mean',
+      normalize: true,
+    });
+    // Convert the tensor to a standard JS array
+    return Array.from(output.data);
   }
 }

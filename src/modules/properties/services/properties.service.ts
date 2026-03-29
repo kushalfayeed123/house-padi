@@ -16,6 +16,8 @@ import { CreatePropertyDto } from '../dto/create-property.dto';
 import { SearchPropertyDto } from '../dto/search-property.dto';
 import { UpdatePropertyDto } from '../dto/update-property.dto';
 import { Property, PropertyStatus } from '../entities/property.entity';
+import { ChatBotService } from 'src/common/chat-bot.service';
+import { AiService } from 'src/common/ai.service';
 
 @Injectable()
 export class PropertiesService {
@@ -24,6 +26,8 @@ export class PropertiesService {
     private readonly propertyRepo: Repository<Property>,
     @InjectRepository(Profile)
     private readonly profileRepo: Repository<Profile>,
+    private chatBotService: ChatBotService,
+    private aiService: AiService,
   ) {}
 
   async create(dto: CreatePropertyDto, ownerId: string): Promise<Property> {
@@ -104,83 +108,160 @@ export class PropertiesService {
   async findByOwner(ownerId: string): Promise<Property[]> {
     return await this.propertyRepo.find({ where: { ownerId } });
   }
-  async findAiRecommended(dto: SearchPropertyDto): Promise<Property[]> {
-    const { location, address, maxPrice, lat, lng, radius = 5 } = dto;
 
-    // 1. Ensure tags are handled as an array (even if a single string comes from the URL)
-    let tags: string[] = [];
-    if (dto.tags) {
-      tags = Array.isArray(dto.tags)
-        ? dto.tags
-        : dto.tags.split(',').map((t) => t.trim());
-    }
+  // async findAiRecommended(dto: SearchPropertyDto): Promise<Property[]> {
+  //   const { location, address, maxPrice, lat, lng, radius = 5 } = dto;
 
-    // 2. Initialize the Base Query
+  //   // 1. Ensure tags are handled as an array (even if a single string comes from the URL)
+  //   let tags: string[] = [];
+  //   if (dto.tags) {
+  //     tags = Array.isArray(dto.tags)
+  //       ? dto.tags
+  //       : dto.tags.split(',').map((t) => t.trim());
+  //   }
+
+  //   // 2. Initialize the Base Query
+  //   const qb = this.propertyRepo.createQueryBuilder('property');
+
+  //   // Only show active listings
+  //   qb.andWhere('property.status = :status', { status: 'available' });
+
+  //   // 3. Geospatial Logic (PostGIS)
+  //   if (lat && lng) {
+  //     qb.andWhere(
+  //       `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
+  //       { lng, lat, dist: radius * 1000 },
+  //     );
+  //     qb.addOrderBy(
+  //       `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
+  //       'ASC',
+  //     );
+  //   }
+
+  //   // 4. Standard Filters (Location, Address, Price)
+  //   if (location?.trim()) {
+  //     qb.andWhere('LOWER(property.location) = LOWER(:location)', { location });
+  //   }
+
+  //   if (address?.trim()) {
+  //     qb.andWhere('property.address_full ILIKE :address', {
+  //       address: `%${address}%`,
+  //     });
+  //   }
+
+  //   if (maxPrice) {
+  //     qb.andWhere('property.priceMonthly <= :maxPrice', { maxPrice });
+  //   }
+
+  //   // 5. Advanced Partial Tag Matching (The "AI-Recommended" Logic)
+  //   if (tags.length > 0) {
+  //     tags.forEach((tag, index) => {
+  //       const paramName = `tag_${index}`;
+
+  //       /**
+  //        * We use EXISTS with a subquery to unnest the JSONB array.
+  //        * This allows us to use ILIKE (Case-Insensitive Partial Match)
+  //        * on every individual tag stored in metadata.
+  //        */
+  //       qb.andWhere(
+  //         `EXISTS (
+  //         SELECT 1
+  //         FROM jsonb_array_elements_text(property.metadata->'search_tags') AS tag_element
+  //         WHERE tag_element ILIKE :${paramName}
+  //       )`,
+  //         { [paramName]: `%${tag}%` },
+  //       );
+  //     });
+  //   }
+
+  //   // 6. Final Sorting
+  //   qb.addOrderBy('property.isFeatured', 'DESC');
+  //   qb.addOrderBy('property.createdAt', 'DESC');
+
+  //   try {
+  //     return await qb.getMany();
+  //   } catch (error) {
+  //     console.error('Search Query Failed:', error);
+  //     throw new InternalServerErrorException(
+  //       'Could not complete property search',
+  //     );
+  //   }
+  // }
+
+  // src/properties/services/properties.service.ts
+
+  // src/properties/services/properties.service.ts
+
+  async findAiRecommended(dto: SearchPropertyDto): Promise<any> {
+    const { chatPrompt, lat, lng, radius = 5, maxPrice, location } = dto;
     const qb = this.propertyRepo.createQueryBuilder('property');
 
-    // Only show active listings
-    qb.andWhere('property.status = :status', { status: 'available' });
+    // 1. Mandatory Filter: Only available listings
+    qb.where('property.status = :status', { status: PropertyStatus.AVAILABLE });
 
-    // 3. Geospatial Logic (PostGIS)
+    let aiSummary = 'Browsing all available properties.';
+
+    // --- HYBRID AI LOGIC ---
+    if (chatPrompt) {
+      // A. Extract Logic (Groq + Llama 3)
+      const extracted =
+        await this.chatBotService.extractSearchFilters(chatPrompt);
+
+      // B. Vector Logic (Xenova + MiniLM)
+      const vibeVector = await this.aiService.generateEmbedding(chatPrompt);
+      const vectorString = `[${vibeVector.join(',')}]`;
+
+      // C. Apply Hard Filters (Merge AI-extracted with Manual DTO filters)
+      const finalLoc = extracted.location || location;
+      const finalPrice = extracted.maxPrice || maxPrice;
+
+      if (finalLoc) {
+        qb.andWhere('LOWER(property.location) LIKE LOWER(:loc)', {
+          loc: `%${finalLoc}%`,
+        });
+      }
+      if (finalPrice) {
+        qb.andWhere('property.priceMonthly <= :maxPrice', {
+          maxPrice: finalPrice,
+        });
+      }
+
+      // D. Semantic Ranking (pgvector)
+      // NOTE: Use getRawAndEntities if you need to see the actual vibe_score
+      qb.addSelect(`property.embedding <=> :vector`, 'vibe_score');
+      qb.setParameter('vector', vectorString);
+      qb.orderBy('vibe_score', 'ASC');
+
+      aiSummary = `Searching for ${finalLoc || 'homes'} ${finalPrice ? `under ₦${finalPrice.toLocaleString()}` : ''} matching: "${chatPrompt}"`;
+    } else {
+      // Default sorting for non-AI searches
+      qb.orderBy('property.isFeatured', 'DESC');
+      qb.addOrderBy('property.createdAt', 'DESC');
+    }
+
+    // --- GEOSPATIAL FILTER (PostGIS) ---
     if (lat && lng) {
       qb.andWhere(
         `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
         { lng, lat, dist: radius * 1000 },
       );
-      qb.addOrderBy(
-        `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
-        'ASC',
-      );
-    }
-
-    // 4. Standard Filters (Location, Address, Price)
-    if (location?.trim()) {
-      qb.andWhere('LOWER(property.location) = LOWER(:location)', { location });
-    }
-
-    if (address?.trim()) {
-      qb.andWhere('property.address_full ILIKE :address', {
-        address: `%${address}%`,
-      });
-    }
-
-    if (maxPrice) {
-      qb.andWhere('property.priceMonthly <= :maxPrice', { maxPrice });
-    }
-
-    // 5. Advanced Partial Tag Matching (The "AI-Recommended" Logic)
-    if (tags.length > 0) {
-      tags.forEach((tag, index) => {
-        const paramName = `tag_${index}`;
-
-        /**
-         * We use EXISTS with a subquery to unnest the JSONB array.
-         * This allows us to use ILIKE (Case-Insensitive Partial Match)
-         * on every individual tag stored in metadata.
-         */
-        qb.andWhere(
-          `EXISTS (
-          SELECT 1 
-          FROM jsonb_array_elements_text(property.metadata->'search_tags') AS tag_element
-          WHERE tag_element ILIKE :${paramName}
-        )`,
-          { [paramName]: `%${tag}%` },
+      // If not using AI ranking, sort by distance
+      if (!chatPrompt) {
+        qb.addOrderBy(
+          `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
+          'ASC',
         );
-      });
+      }
     }
 
-    // 6. Final Sorting
-    qb.addOrderBy('property.isFeatured', 'DESC');
-    qb.addOrderBy('property.createdAt', 'DESC');
+    // Use getMany() for clean entities, or getRawAndEntities() if you want the scores
+    const results = await qb.take(20).getMany();
 
-    try {
-      return await qb.getMany();
-    } catch (error) {
-      console.error('Search Query Failed:', error);
-      throw new InternalServerErrorException(
-        'Could not complete property search',
-      );
-    }
+    return {
+      summary: aiSummary,
+      count: results.length,
+      data: results,
+    };
   }
 
   async updateAiMetadata(property: Property, aiTags: string[]): Promise<void> {
