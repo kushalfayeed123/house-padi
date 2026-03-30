@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
@@ -147,11 +149,10 @@ export class AiService implements OnModuleInit {
       const parsed = JSON.parse(content);
       const validated = AnalysisSchema.parse(parsed);
 
-      // 💡 MANUALLY MAP ai_summary to aiSummary if your schema needs it
       return {
         ...validated,
         ai_summary: validated.ai_summary || validated.ai_summary,
-        search_tags: validated.search_tags, // Safety check
+        search_tags: validated.search_tags,
       };
     } catch (e) {
       this.logger.error(`AI Analysis final failure: ${e.message}`);
@@ -164,7 +165,59 @@ export class AiService implements OnModuleInit {
       pooling: 'mean',
       normalize: true,
     });
-    // Convert the tensor to a standard JS array
     return Array.from(output.data);
+  }
+
+  async synthesizeSearchResponse(
+    query: string,
+    results: any[],
+  ): Promise<string> {
+    const systemPrompt = `You are 'Padi', the AI heartbeat of HousePadi. 
+    Your goal is to explain search results to a user in a helpful, conversational professional tone.
+    
+    CRITICAL RULES:
+    1. If results are empty, apologize warmly and suggest looking in a nearby area (e.g., if Lekki is empty, suggest Ikate or Ajah).
+    2. If there's a mismatch (e.g., they asked for 3 beds, you found 2), explain the benefit of the current result (e.g., 'It's detached', 'Better security', 'Cheaper').
+    3. Use relatable terms: 'Clean spot', 'Standard security'.
+    4. Keep it to 3 sentences max. Do NOT list data in a table.
+    `;
+
+    const summaryData = results.slice(0, 2).map((r) => ({
+      title: r.title,
+      location: r.location,
+      price: r.price,
+      bedrooms: r.features?.bedrooms,
+    }));
+
+    try {
+      const response = await this.fetchWithRetry(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.configService.get('OPENROUTER_API_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'openrouter/free',
+            messages: [
+              {
+                role: 'user', // Using 'user' role for instructions + data to avoid 400 errors
+                content: `${systemPrompt}\n\nUser Search: "${query}"\nFound Data: ${JSON.stringify(summaryData)}`,
+              },
+            ],
+            temperature: 0.7, // Higher temp for natural speech
+          }),
+        },
+      );
+
+      const data = await response.json();
+      return (
+        data.choices?.[0]?.message?.content ||
+        "I found some spots you'll like! Check them out below."
+      );
+    } catch (error) {
+      return 'I found some great options for you. Take a look!';
+    }
   }
 }

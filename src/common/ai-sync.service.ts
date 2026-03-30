@@ -5,8 +5,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AiService } from 'src/common/ai.service';
-import { Repository, IsNull } from 'typeorm';
-import { Property } from '../entities/property.entity';
+import { Repository, Raw } from 'typeorm';
+import { Property } from '../modules/properties/entities/property.entity';
 
 @Injectable()
 export class AiSyncService {
@@ -26,10 +26,21 @@ export class AiSyncService {
     // Find properties where embedding is missing OR tags are empty
     // Note: Adjust the 'metadata' check based on your specific JSONB structure
     const pendingProperties = await this.propertyRepo.find({
-      where: [{ embedding: IsNull() }, { aiSummary: IsNull() }],
-      take: 10, // Process in small batches to avoid overloading
+      where: [
+        {
+          metadata: Raw(
+            (alias) => `${alias} -> 'search_tags' = '["Property"]'::jsonb`,
+          ),
+        },
+        {
+          features: Raw(
+            (alias) =>
+              `(${alias} ->> 'bedrooms')::int = 0 OR (${alias} ->> 'bathrooms')::int = 0`,
+          ),
+        },
+      ],
+      take: 10,
     });
-
     if (pendingProperties.length === 0) {
       return this.logger.log('✅ All properties are up to date.');
     }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 // src/properties/properties.controller.ts
 import {
@@ -60,18 +61,30 @@ export class PropertiesController {
     let tagArray: string[] = [];
 
     if (query.tags) {
-      // Handle cases where tags might already be an array or a comma-separated string
-      tagArray = Array.isArray(query.tags)
-        ? query.tags
-        : query.tags
-            .split(',')
-            .map((t) => t.trim().toLowerCase())
-            .filter((t) => t !== '');
+      if (Array.isArray(query.tags)) {
+        tagArray = query.tags;
+      } else if (typeof query.tags === 'string') {
+        // Handle JSON string like '["serviced", "2 bedroom"]' OR 'serviced, 2 bedroom'
+        if (query.tags.startsWith('[') && query.tags.endsWith(']')) {
+          try {
+            tagArray = JSON.parse(query.tags);
+          } catch {
+            tagArray = query.tags.split(',');
+          }
+        } else {
+          tagArray = query.tags.split(',');
+        }
+      }
+
+      // Clean up: trim, lowercase, and remove empties
+      tagArray = tagArray
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t !== '');
     }
 
     return this.propertiesService.findAiRecommended({
       ...query,
-      tags: tagArray, // Now TypeScript is happy because 'tags' accepts string[]
+      tags: tagArray,
     });
   }
 

@@ -109,143 +109,81 @@ export class PropertiesService {
     return await this.propertyRepo.find({ where: { ownerId } });
   }
 
-  // async findAiRecommended(dto: SearchPropertyDto): Promise<Property[]> {
-  //   const { location, address, maxPrice, lat, lng, radius = 5 } = dto;
-
-  //   // 1. Ensure tags are handled as an array (even if a single string comes from the URL)
-  //   let tags: string[] = [];
-  //   if (dto.tags) {
-  //     tags = Array.isArray(dto.tags)
-  //       ? dto.tags
-  //       : dto.tags.split(',').map((t) => t.trim());
-  //   }
-
-  //   // 2. Initialize the Base Query
-  //   const qb = this.propertyRepo.createQueryBuilder('property');
-
-  //   // Only show active listings
-  //   qb.andWhere('property.status = :status', { status: 'available' });
-
-  //   // 3. Geospatial Logic (PostGIS)
-  //   if (lat && lng) {
-  //     qb.andWhere(
-  //       `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
-  //       { lng, lat, dist: radius * 1000 },
-  //     );
-  //     qb.addOrderBy(
-  //       `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
-  //       'ASC',
-  //     );
-  //   }
-
-  //   // 4. Standard Filters (Location, Address, Price)
-  //   if (location?.trim()) {
-  //     qb.andWhere('LOWER(property.location) = LOWER(:location)', { location });
-  //   }
-
-  //   if (address?.trim()) {
-  //     qb.andWhere('property.address_full ILIKE :address', {
-  //       address: `%${address}%`,
-  //     });
-  //   }
-
-  //   if (maxPrice) {
-  //     qb.andWhere('property.priceMonthly <= :maxPrice', { maxPrice });
-  //   }
-
-  //   // 5. Advanced Partial Tag Matching (The "AI-Recommended" Logic)
-  //   if (tags.length > 0) {
-  //     tags.forEach((tag, index) => {
-  //       const paramName = `tag_${index}`;
-
-  //       /**
-  //        * We use EXISTS with a subquery to unnest the JSONB array.
-  //        * This allows us to use ILIKE (Case-Insensitive Partial Match)
-  //        * on every individual tag stored in metadata.
-  //        */
-  //       qb.andWhere(
-  //         `EXISTS (
-  //         SELECT 1
-  //         FROM jsonb_array_elements_text(property.metadata->'search_tags') AS tag_element
-  //         WHERE tag_element ILIKE :${paramName}
-  //       )`,
-  //         { [paramName]: `%${tag}%` },
-  //       );
-  //     });
-  //   }
-
-  //   // 6. Final Sorting
-  //   qb.addOrderBy('property.isFeatured', 'DESC');
-  //   qb.addOrderBy('property.createdAt', 'DESC');
-
-  //   try {
-  //     return await qb.getMany();
-  //   } catch (error) {
-  //     console.error('Search Query Failed:', error);
-  //     throw new InternalServerErrorException(
-  //       'Could not complete property search',
-  //     );
-  //   }
-  // }
-
-  // src/properties/services/properties.service.ts
-
-  // src/properties/services/properties.service.ts
-
   async findAiRecommended(dto: SearchPropertyDto): Promise<any> {
-    const { chatPrompt, lat, lng, radius = 5, maxPrice, location } = dto;
+    const { chatPrompt, lat, lng, radius = 5, maxPrice, location, tags } = dto;
     const qb = this.propertyRepo.createQueryBuilder('property');
 
     // 1. Mandatory Filter: Only available listings
     qb.where('property.status = :status', { status: PropertyStatus.AVAILABLE });
 
-    let aiSummary = 'Browsing all available properties.';
+    let extractedLoc = location;
+    let extractedPrice = maxPrice;
 
     // --- HYBRID AI LOGIC ---
     if (chatPrompt) {
-      // A. Extract Logic (Groq + Llama 3)
+      // A. Extract Hard Filters (Location/Price) via LLM
       const extracted =
         await this.chatBotService.extractSearchFilters(chatPrompt);
+      extractedLoc = extracted.location || location;
+      extractedPrice = extracted.maxPrice || maxPrice;
+      if (extracted.bedrooms) {
+        qb.andWhere(
+          "(property.features->>'bedrooms')::int BETWEEN :min AND :max",
+          {
+            min: extracted.bedrooms - 1,
+            max: extracted.bedrooms,
+          },
+        );
+      }
 
-      // B. Vector Logic (Xenova + MiniLM)
+      // B. Generate Semantic Vector (The "Vibe" check)
       const vibeVector = await this.aiService.generateEmbedding(chatPrompt);
       const vectorString = `[${vibeVector.join(',')}]`;
 
-      // C. Apply Hard Filters (Merge AI-extracted with Manual DTO filters)
-      const finalLoc = extracted.location || location;
-      const finalPrice = extracted.maxPrice || maxPrice;
+      // C. Apply Vector Ranking (pgvector)
 
-      if (finalLoc) {
-        qb.andWhere('LOWER(property.location) LIKE LOWER(:loc)', {
-          loc: `%${finalLoc}%`,
-        });
-      }
-      if (finalPrice) {
-        qb.andWhere('property.priceMonthly <= :maxPrice', {
-          maxPrice: finalPrice,
-        });
-      }
-
-      // D. Semantic Ranking (pgvector)
-      // NOTE: Use getRawAndEntities if you need to see the actual vibe_score
       qb.addSelect(`property.embedding <=> :vector`, 'vibe_score');
       qb.setParameter('vector', vectorString);
       qb.orderBy('vibe_score', 'ASC');
 
-      aiSummary = `Searching for ${finalLoc || 'homes'} ${finalPrice ? `under ₦${finalPrice.toLocaleString()}` : ''} matching: "${chatPrompt}"`;
+      // D. Apply Extracted Hard Filters
+      if (extractedLoc) {
+        qb.andWhere('LOWER(property.location) LIKE LOWER(:loc)', {
+          loc: `%${extractedLoc}%`,
+        });
+      }
+      if (extractedPrice) {
+        qb.andWhere('property.priceMonthly <= :maxP', { maxP: extractedPrice });
+      }
     } else {
-      // Default sorting for non-AI searches
+      // Default sorting if no AI prompt is provided
       qb.orderBy('property.isFeatured', 'DESC');
       qb.addOrderBy('property.createdAt', 'DESC');
     }
 
+    // Inside findAiRecommended in properties.service.ts
+
+    if (tags && tags.length > 0) {
+      // Use '->>' to get the field as text or '->' to get it as JSON
+      // Then use '@>' to check if that specific array contains your tags
+      qb.andWhere("property.metadata->'search_tags' @> :tagList", {
+        tagList: JSON.stringify(tags),
+      });
+    }
+
     // --- GEOSPATIAL FILTER (PostGIS) ---
+    // This uses the lat/lng/radius from your DTO
     if (lat && lng) {
       qb.andWhere(
         `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
-        { lng, lat, dist: radius * 1000 },
+        {
+          lng: Number(lng),
+          lat: Number(lat),
+          dist: (radius || 5) * 1000, // Convert km to meters
+        },
       );
-      // If not using AI ranking, sort by distance
+
+      // If there's no AI "vibe score", sort by physical proximity
       if (!chatPrompt) {
         qb.addOrderBy(
           `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
@@ -254,18 +192,32 @@ export class PropertiesService {
       }
     }
 
-    // Use getMany() for clean entities, or getRawAndEntities() if you want the scores
+    // Execution
     const results = await qb.take(20).getMany();
 
+    // --- THE CONVERSATIONAL WRAPPER ---
+    // Padi explains the results based on everything we found (or didn't find)
+    let padiMessage = '';
+    if (chatPrompt) {
+      padiMessage = await this.aiService.synthesizeSearchResponse(
+        chatPrompt,
+        results,
+      );
+    } else {
+      padiMessage =
+        results.length > 0
+          ? 'Here are the top-rated spots near you right now!'
+          : "it's a bit empty around here. Want to try widening your search radius?";
+    }
+
     return {
-      summary: aiSummary,
+      padi_summary: padiMessage,
       count: results.length,
       data: results,
     };
   }
 
   async updateAiMetadata(property: Property, aiTags: string[]): Promise<void> {
-    // No need to "findOne" here anymore!
     property.metadata = {
       ...property.metadata,
       ai_optimized: true,

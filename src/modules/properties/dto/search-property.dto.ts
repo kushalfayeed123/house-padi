@@ -11,7 +11,6 @@ import { Type } from 'class-transformer';
 
 export class SearchPropertyDto {
   @IsOptional()
-  @IsString()
   tags?: string | string[];
 
   @IsOptional()
