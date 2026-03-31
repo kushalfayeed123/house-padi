@@ -48,6 +48,13 @@ export class PropertiesController {
     return this.propertiesService.findAll(limit);
   }
 
+  @Get('featured')
+  @ApiOperation({ summary: 'Browse featured properties' })
+  @ApiQuery({ name: 'limit', required: false })
+  async findFeatured(@Query('limit') limit?: number) {
+    return this.propertiesService.findFeaured(limit);
+  }
+
   @Get('my-listings')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Owners view their own properties' })

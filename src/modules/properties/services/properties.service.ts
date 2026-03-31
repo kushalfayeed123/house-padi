@@ -98,6 +98,17 @@ export class PropertiesService {
       order: { createdAt: 'DESC' },
     });
   }
+  async findFeaured(limit = 10, offset = 0): Promise<Property[]> {
+    return await this.propertyRepo.find({
+      where: {
+        isFeatured: true,
+        status: PropertyStatus.AVAILABLE,
+      },
+      take: limit,
+      skip: offset,
+      order: { createdAt: 'DESC' },
+    });
+  }
 
   async findOne(id: string): Promise<Property> {
     const property = await this.propertyRepo.findOne({ where: { id } });

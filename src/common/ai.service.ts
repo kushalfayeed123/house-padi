@@ -75,7 +75,7 @@ export class AiService implements OnModuleInit {
     location: string,
   ): Promise<PropertyAnalysis> {
     // Update your system prompt to this:
-    const systemPrompt = `You are a Lagos Real Estate Marketing Expert. 
+    const systemPrompt = `You are a Real Estate Marketing Expert. 
           Return ONLY a JSON object with this exact structure:
           {
             "ai_summary": "A 2-sentence captivating sales pitch.",
