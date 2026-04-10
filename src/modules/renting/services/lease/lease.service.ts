@@ -46,12 +46,12 @@ export class LeaseService {
     }
 
     // 3. Prevent Multiple Active Tenancies
-    const existingActiveLease = await this.leaseRepo.findOne({
-      where: { renterId: app.renter_id, isActive: true },
-    });
-    if (existingActiveLease) {
-      throw new BadRequestException('You already have an active lease.');
-    }
+    // const existingActiveLease = await this.leaseRepo.findOne({
+    //   where: { renterId: app.renter_id, isActive: true },
+    // });
+    // if (existingActiveLease) {
+    //   throw new BadRequestException('You already have an active lease.');
+    // }
 
     // 4. Property Availability Check
     if (app.property.status === PropertyStatus.RENTED) {
