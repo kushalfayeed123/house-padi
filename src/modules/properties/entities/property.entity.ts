@@ -2,6 +2,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PropertyAnalysis } from 'src/common/schemas/property-analysis.schema';
 import { Profile } from 'src/modules/profile/entities/profile.entity';
+import { Application } from 'src/modules/renting/entities/application.entity';
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -10,6 +11,7 @@ import {
   UpdateDateColumn,
   JoinColumn,
   ManyToOne,
+  OneToMany,
 } from 'typeorm';
 
 export enum PropertyStatus {
@@ -23,63 +25,63 @@ export enum PropertyStatus {
 @Entity('properties')
 export class Property {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   // 1. Explicitly define ownerId as a column so you can save it directly
   @Column({ name: 'owner_id', type: 'uuid' })
-  ownerId: string;
+  ownerId!: string;
 
   // 2. Add the relationship back to the Profile
   @ManyToOne(() => Profile, (profile) => profile.properties)
   @JoinColumn({ name: 'owner_id' })
-  owner: Profile;
+  owner!: Profile;
 
   // 3. Add the Lease Duration (e.g., 12 months)
   @Column({ name: 'lease_duration_months', type: 'int', default: 12 })
-  leaseDurationMonths: number;
+  leaseDurationMonths!: number;
 
   // 4. Add the Agreement Content (The legal text)
   @Column({ name: 'agreement_content', type: 'text', nullable: true })
-  agreementContent: string;
+  agreementContent!: string;
 
   @Column()
-  title: string;
+  title!: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description!: string;
 
   @Column({ name: 'price', type: 'numeric', precision: 12, scale: 2 })
-  price: number;
+  price!: number;
 
   @Column({ length: 3, default: 'USD' })
-  currency: string;
+  currency!: string;
 
   @Column({ name: 'address_full' })
-  addressFull: string;
+  addressFull!: string;
 
   @Column()
-  location: string;
+  location!: string;
 
   @Column('text', { array: true, default: '{}' })
-  images: string[];
+  images!: string[];
 
   @Column({ type: 'jsonb', default: {} })
-  features: PropertyAnalysis['features'];
+  features!: PropertyAnalysis['features'];
 
   @Column({ type: 'enum', enum: PropertyStatus, default: PropertyStatus.DRAFT })
-  status: PropertyStatus;
+  status!: PropertyStatus;
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, any>;
+  metadata!: Record<string, any>;
 
   @Column({ name: 'is_featured', default: false })
-  isFeatured: boolean;
+  isFeatured!: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  updatedAt!: Date;
 
   @ApiProperty({
     type: 'object',
@@ -98,14 +100,17 @@ export class Property {
     srid: 4326,
     nullable: true,
   })
-  coords: { type: 'Point'; coordinates: [number, number] };
+  coords!: { type: 'Point'; coordinates: [number, number] };
 
   @Column({
     type: 'vector',
     nullable: true,
     length: 384,
   })
-  embedding: number[];
+  embedding!: number[];
   @Column({ type: 'text', nullable: true })
-  aiSummary: string; // Ensure this matches exactly what you use in the .find()
+  aiSummary!: string; // Ensure this matches exactly what you use in the .find()
+
+  @OneToMany(() => Application, (application) => application.property)
+  applications!: Application[];
 }

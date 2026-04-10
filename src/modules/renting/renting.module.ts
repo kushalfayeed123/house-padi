@@ -17,6 +17,8 @@ import { PayoutService } from '../finance/services/payout/payout.service';
 import { StorageService } from 'src/common/storage.service';
 import { FinanceModule } from '../finance/finance.module';
 import { AiService } from 'src/common/ai.service';
+import { PropertiesService } from '../properties/services/properties.service';
+import { ChatBotService } from 'src/common/chat-bot.service';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { AiService } from 'src/common/ai.service';
     PayoutService,
     StorageService,
     AiService,
+    PropertiesService,
+    ChatBotService,
   ],
   exports: [LeaseService], // Export if other modules need to check lease status
 })

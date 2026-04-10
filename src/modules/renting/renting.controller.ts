@@ -35,7 +35,7 @@ export class RentingController {
     @GetUser('userId') renterId: string,
   ) {
     return await this.tourService.createApplication(
-      body.propertyId,
+      body.propertyId ?? '',
       renterId,
       body.tourDate,
     );
@@ -110,5 +110,15 @@ export class RentingController {
     @GetUser('userId') ownerId: string,
   ) {
     return this.leaseService.declineLease(id, ownerId);
+  }
+
+  @Get('received-applications')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary:
+      'Landlord: Get all applications for all properties owned by the current user',
+  })
+  async getReceivedApplications(@GetUser('userId') ownerId: string) {
+    return this.tourService.getOwnerDashboardApplications(ownerId);
   }
 }

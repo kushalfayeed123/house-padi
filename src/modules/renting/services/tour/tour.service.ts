@@ -9,12 +9,19 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Application } from '../../entities/application.entity';
-import { Property } from 'src/modules/properties/entities/property.entity';
+import {
+  Property,
+  PropertyStatus,
+} from 'src/modules/properties/entities/property.entity';
+import { PropertiesService } from 'src/modules/properties/services/properties.service';
+import { LeaseService } from '../lease/lease.service';
 
 // src/modules/renting/services/tour.service.ts
 @Injectable()
 export class TourService {
   constructor(
+    private readonly propertiesService: PropertiesService,
+    private readonly leaseService: LeaseService,
     @InjectRepository(Application) private appRepo: Repository<Application>,
     @InjectRepository(Property) private propertyRepo: Repository<Property>,
   ) {}
@@ -25,7 +32,13 @@ export class TourService {
     tourDate?: Date,
   ) {
     // If no tourDate, status is 'approved' (Direct Rent), otherwise 'submitted'
-    const status = tourDate ? 'submitted' : 'approved';
+    const status = 'submitted';
+    const property = await this.propertiesService.findOne(propertyId);
+    if (property.status !== PropertyStatus.AVAILABLE) {
+      throw new BadRequestException(
+        'This property is currently under review or already rented and is not accepting new applications.',
+      );
+    }
     const app = this.appRepo.create({
       property_id: propertyId,
       renter_id: renterId,
@@ -52,14 +65,22 @@ export class TourService {
       throw new ForbiddenException('Unauthorized to update this application');
     }
 
-    // 2. The Fix: Explicitly check that status exists
     if (!status) {
       throw new BadRequestException('Status value is required for update');
     }
 
-    // 3. Perform the update
-    // Ensure 'status' matches the column name in your Application entity
     await this.appRepo.update(id, { status: status });
+
+    const app = await this.appRepo.findOne({ where: { id: id } });
+
+    if (status === 'approved') {
+      await this.leaseService.prepareLease(id, app?.renter_id ?? '');
+
+      await this.propertiesService.updateStatus(
+        application.property.id,
+        PropertyStatus.PENDING,
+      );
+    }
 
     return { success: true, newStatus: status };
   }
@@ -69,6 +90,20 @@ export class TourService {
       where: { renter_id: userId },
       relations: ['property'],
       order: { applied_at: 'DESC' },
+    });
+  }
+
+  async getOwnerDashboardApplications(ownerId: string) {
+    return await this.appRepo.find({
+      where: {
+        property: {
+          ownerId: ownerId, // TypeORM allows filtering by nested relation properties
+        },
+      },
+      relations: ['property', 'renter'], // Include property info and the applicant profile
+      order: {
+        applied_at: 'DESC',
+      },
     });
   }
 

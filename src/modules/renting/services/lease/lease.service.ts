@@ -23,7 +23,7 @@ import { PayoutService } from 'src/modules/finance/services/payout/payout.servic
 @Injectable()
 export class LeaseService {
   constructor(
-    private dataSource: DataSource, // Used for atomic transactions
+    private dataSource: DataSource,
     @InjectRepository(Lease) private leaseRepo: Repository<Lease>,
     @InjectRepository(Application) private appRepo: Repository<Application>,
     private contractService: ContractService,
@@ -32,7 +32,7 @@ export class LeaseService {
   ) {}
 
   async prepareLease(applicationId: string, renterId: string) {
-    // 1. Fetch application with full relations for the PDF content
+    // 1. Fetch application with full relations
     const app = await this.appRepo.findOne({
       where: { id: applicationId, renter_id: renterId },
       relations: ['property', 'property.owner', 'renter'],
@@ -40,12 +40,9 @@ export class LeaseService {
 
     if (!app) throw new NotFoundException('Application not found.');
 
-    // 2. Validate Application Status
-    const allowedStatuses = ['approved', 'screening'];
-    if (!allowedStatuses.includes(app.status)) {
-      throw new BadRequestException(
-        `Application status is '${app.status}'. Must be approved.`,
-      );
+    // 2. Idempotency Check: Return existing if already prepared
+    if (app.lease_id) {
+      return await this.leaseRepo.findOne({ where: { id: app.lease_id } });
     }
 
     // 3. Prevent Multiple Active Tenancies
@@ -56,22 +53,12 @@ export class LeaseService {
       throw new BadRequestException('You already have an active lease.');
     }
 
-    // 4. Idempotency Check (Existing Draft)
-    const existingDraft = await this.leaseRepo.findOne({
-      where: {
-        propertyId: app.property_id,
-        renterId: app.renter_id,
-        isActive: false,
-      },
-    });
-    if (existingDraft) return existingDraft;
-
-    // 5. Property Availability Check
+    // 4. Property Availability Check
     if (app.property.status === PropertyStatus.RENTED) {
       throw new BadRequestException('This property has already been taken.');
     }
 
-    // 6. Generate the Database Record first
+    // 5. Generate Lease Record
     const lease = this.leaseRepo.create({
       propertyId: app.property_id,
       ownerId: app.property.ownerId,
@@ -83,7 +70,7 @@ export class LeaseService {
 
     const savedLease = await this.leaseRepo.save(lease);
 
-    // 7. Generate the actual PDF Document
+    // 6. Generate PDF Document
     try {
       const contractUrl = await this.contractService.generateLeasePDF({
         leaseId: savedLease.id,
@@ -96,11 +83,18 @@ export class LeaseService {
         address: app.property.addressFull,
       });
 
-      // 8. Update the lease with the real URL
+      // 7. Update Lease with URL
       savedLease.contractUrl = contractUrl;
-      return await this.leaseRepo.save(savedLease);
+      await this.leaseRepo.save(savedLease);
+
+      // 8. LINK TO APPLICATION (Crucial for frontend)
+      await this.appRepo.update(applicationId, {
+        lease_id: savedLease.id,
+        contract_url: savedLease.contractUrl,
+      });
+
+      return savedLease;
     } catch (error) {
-      // If PDF fails, we should probably delete the lease draft or log it
       console.error('PDF Generation failed:', error);
       throw new InternalServerErrorException(
         'Could not generate lease document.',
@@ -110,20 +104,19 @@ export class LeaseService {
 
   async completeRental(leaseId: string, paymentRef: string, userId: string) {
     return await this.dataSource.transaction(async (manager: EntityManager) => {
-      // 1. LOCK THE RECORD
-      const leaseLock = await manager.findOne(Lease, {
+      // 1. LOCK ONLY THE LEASE (No relations here to avoid the JOIN error)
+      const lease = await manager.findOne(Lease, {
         where: { id: leaseId },
         lock: { mode: 'pessimistic_write' },
       });
 
-      if (!leaseLock || leaseLock.isActive) {
-        throw new BadRequestException(
-          'Lease is either invalid or already active',
-        );
+      if (!lease || lease.isActive) {
+        throw new BadRequestException('Lease is invalid or already active');
       }
 
-      // 2. FETCH FULL DATA (Lease, Property, Owner, and Renter)
-      const lease = await manager.findOne(Lease, {
+      // 2. FETCH RELATIONS WITHOUT THE PESSIMISTIC LOCK
+      // We fetch these separately so we don't try to lock the "nullable" side of joins
+      const leaseData = await manager.findOne(Lease, {
         where: { id: leaseId },
         relations: [
           'property',
@@ -133,10 +126,8 @@ export class LeaseService {
         ],
       });
 
-      if (!lease?.property?.owner?.bankDetail) {
-        throw new BadRequestException(
-          'Owner bank details are missing. Cannot process payout.',
-        );
+      if (!leaseData?.property?.owner?.bankDetail) {
+        throw new BadRequestException('Owner bank details missing.');
       }
 
       // 3. FINANCIAL CALCULATIONS
@@ -144,20 +135,7 @@ export class LeaseService {
       const platformFee = totalAmount * 0.05;
       const ownerShare = totalAmount - platformFee;
 
-      // 4. GENERATE COMPACT LEGAL PDF
-
-      const contractUrl = await this.contractService.generateLeasePDF({
-        leaseId: lease.id,
-        ownerName: `${lease.property?.owner?.firstName ?? 'Owner'} ${lease.property?.owner?.lastName ?? ''}`,
-        renterName: `${lease.renter?.firstName ?? 'Tenant'} ${lease.renter?.lastName ?? ''}`,
-        propertyTitle: lease.property?.title ?? 'Residential Property',
-        address: lease.property?.addressFull ?? 'Address not specified',
-        amount: totalAmount,
-        currency: lease.property?.currency || '₦',
-        agreementContent: lease.property?.agreementContent || '',
-      });
-
-      // 5. SAVE TRANSACTION RECORD
+      // 4. SAVE TRANSACTION RECORD
       const tx = await manager.save(Transaction, {
         lease_id: leaseId,
         payer_id: userId,
@@ -167,7 +145,7 @@ export class LeaseService {
         status: 'success',
       });
 
-      // 6. UPDATE LEDGERS
+      // 5. UPDATE LEDGERS
       await this.ledgerService.creditUser(
         manager,
         'd7f57c3b-0dd5-4c2b-b551-93887e60ab53',
@@ -175,6 +153,7 @@ export class LeaseService {
         LedgerCategory.PLATFORM_FEE,
         tx.id,
       );
+
       await this.ledgerService.creditUser(
         manager,
         lease.ownerId,
@@ -183,18 +162,16 @@ export class LeaseService {
         tx.id,
       );
 
-      // 7. ACTIVATE LEASE AND UPDATE PROPERTY STATUS
-      await manager.update(Lease, leaseId, {
-        isActive: true,
-        contractUrl: contractUrl, // Ensure property name matches your Entity (contractUrl vs contract_url)
-      });
+      // 6. ACTIVATE LEASE & UPDATE PROPERTY
+      await manager.update(Lease, leaseId, { isActive: true });
+
       await manager.update(Property, lease.propertyId, {
         status: PropertyStatus.RENTED,
       });
 
-      // 8. QUEUE PAYOUT
+      // 7. QUEUE PAYOUT (Using the data from our second fetch)
       await this.payoutService.queueAutoPayout(
-        lease.property.owner.bankDetail,
+        leaseData.property.owner.bankDetail,
         ownerShare,
         tx.id,
         lease.ownerId,
@@ -202,8 +179,8 @@ export class LeaseService {
 
       return {
         success: true,
-        message: 'Lease activated and contract generated.',
-        contractUrl,
+        message: 'Lease activated successfully.',
+        contractUrl: lease.contractUrl,
       };
     });
   }
@@ -222,18 +199,25 @@ export class LeaseService {
     });
 
     if (!lease) throw new NotFoundException('Lease not found');
-    if (lease.isActive)
+
+    if (lease.isActive) {
       throw new BadRequestException('Cannot decline an active lease');
+    }
 
     // Simply delete the draft lease so the user can apply elsewhere
+    // This frees up the property for other applicants
     await this.leaseRepo.remove(lease);
-    return { success: true, message: 'Lease offer declined' };
+
+    return {
+      success: true,
+      message: 'Lease offer declined successfully',
+    };
   }
 
   async getLeaseById(id: string): Promise<Lease> {
     const lease = await this.leaseRepo.findOne({
       where: { id },
-      relations: ['property'], // We need the property to check the rent price
+      relations: ['property'], // Needed to verify details during payment/review
     });
 
     if (!lease) {

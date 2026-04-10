@@ -111,7 +111,10 @@ export class PropertiesService {
   }
 
   async findOne(id: string): Promise<Property> {
-    const property = await this.propertyRepo.findOne({ where: { id } });
+    const property = await this.propertyRepo.findOne({
+      where: { id },
+      relations: ['applications'],
+    });
     if (!property) throw new NotFoundException('Property not found');
     return property;
   }
@@ -298,5 +301,12 @@ export class PropertiesService {
 
     // 3. Save the modified entity
     await this.propertyRepo.save(property);
+  }
+
+  async updateStatus(id: string, status: PropertyStatus): Promise<void> {
+    const result = await this.propertyRepo.update(id, { status });
+    if (result.affected === 0) {
+      throw new NotFoundException('Property not found');
+    }
   }
 }
