@@ -9,15 +9,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Profile } from 'src/modules/profile/entities/profile.entity';
-import { KycStatus } from 'src/modules/profile/enums/kyc-status.enum';
-import { Repository } from 'typeorm';
+
+import { Brackets, Repository } from 'typeorm';
 import { CreatePropertyDto } from '../dto/create-property.dto';
 import { SearchPropertyDto } from '../dto/search-property.dto';
 import { UpdatePropertyDto } from '../dto/update-property.dto';
 import { Property, PropertyStatus } from '../entities/property.entity';
-import { ChatBotService } from 'src/common/chat-bot.service';
-import { AiService } from 'src/common/ai.service';
+import { AiService } from '../../../common/ai.service';
+import { ChatBotService } from '../../../common/chat-bot.service';
+import { StorageService } from '../../../common/storage.service';
+import { Profile } from '../../profile/entities/profile.entity';
+import { KycStatus } from '../../profile/enums/kyc-status.enum';
+import { TourService } from '../../renting/services/tour/tour.service';
 
 @Injectable()
 export class PropertiesService {
@@ -28,66 +31,87 @@ export class PropertiesService {
     private readonly profileRepo: Repository<Profile>,
     private chatBotService: ChatBotService,
     private aiService: AiService,
+    private storageService: StorageService,
+    private tourService: TourService,
   ) {}
 
-  async create(dto: CreatePropertyDto, ownerId: string): Promise<Property> {
+  async create(
+    dto: CreatePropertyDto,
+    ownerId: string,
+    files: Express.Multer.File[],
+  ): Promise<Property> {
+    // 1. Validation Logic
+    const profile = await this.profileRepo.findOne({
+      where: { id: ownerId },
+      relations: ['bankDetail', 'kyc'],
+    });
+
+    if (!profile) throw new NotFoundException('Owner profile not found');
+
+    if (profile.kyc?.status !== KycStatus.VERIFIED) {
+      throw new ForbiddenException(
+        'KYC verification required to list properties.',
+      );
+    }
+
+    if (!profile.bankDetail) {
+      throw new BadRequestException(
+        'Please set up your payout bank account first.',
+      );
+    }
+
     try {
-      // 1. Fetch profile using 'id' (which is the Supabase UID)
-      const profile = await this.profileRepo.findOne({
-        where: { id: ownerId }, // Use 'id' instead of 'userId'
-        relations: ['bankDetail', 'kyc'],
-      });
+      // 2. Concurrent Uploads to Supabase
+      // We map files to public URLs to store in the DB
+      const imageUrls = await Promise.all(
+        files.map((file, index) => {
+          const fileExt = file.originalname.split('.').pop();
+          // Path: properties/{ownerId}/{timestamp}-{index}.ext
+          const path = `properties/${ownerId}/${Date.now()}-${index}.${fileExt}`;
+          return this.storageService.uploadFile(
+            path,
+            file.buffer,
+            file.mimetype,
+          );
+        }),
+      );
 
-      if (!profile) {
-        throw new NotFoundException('Owner profile not found');
-      }
-
-      // 2. Business Logic: KYC Check
-      if (profile.kyc.status !== KycStatus.VERIFIED) {
-        throw new ForbiddenException(
-          'KYC verification required to list properties.',
-        );
-      }
-
-      // 3. Business Logic: Bank Check
-      if (!profile.bankDetail) {
-        throw new BadRequestException(
-          'Please set up your payout bank account first.',
-        );
-      }
-
-      // 4. Geospatial Logic
-      const { lat, lng, ...rest } = dto;
+      // 3. Geospatial Logic (PostGIS Point)
       const coords =
-        lat !== undefined && lng !== undefined
+        dto.lat !== undefined && dto.lng !== undefined
           ? {
               type: 'Point' as const,
-              coordinates: [lng, lat] as [number, number],
+              coordinates: [dto.lng, dto.lat] as [number, number],
             }
           : undefined;
 
-      // 5. Build and Save the Entity
+      // 4. Create Entity
+      // Note: We save it as DRAFT. The Subscriber will update it to AVAILABLE after AI enrichment.
       const property = this.propertyRepo.create({
-        ...rest,
+        ...dto,
         ownerId,
-        status: PropertyStatus.DRAFT,
+        images: imageUrls,
         coords,
-        // Ensure these from your updated DTO are mapped
-        leaseDurationMonths: dto.leaseDurationMonths,
-        agreementContent: dto.agreementContent,
+        status: PropertyStatus.DRAFT,
+        // Handle features if sent as stringified JSON from FormData
+        features:
+          typeof dto.features === 'string'
+            ? JSON.parse(dto.features)
+            : dto.features || {},
+        metadata: {}, // Initial empty metadata for subscriber to fill
       });
 
-      return await this.propertyRepo.save(property);
+      // 5. Save to Database
+      // This call triggers PropertySubscriber.afterInsert
+      const savedProperty = await this.propertyRepo.save(property);
+
+      return savedProperty;
     } catch (error) {
-      // Pass through NestJS built-in exceptions (403, 400, etc.)
-      if (
-        error instanceof ForbiddenException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      console.error('Property Creation Error:', error);
-      throw new InternalServerErrorException('Error creating property listing');
+      console.error('Property Creation Failure:', error);
+      // Clean up uploaded files if DB save fails (Optional but recommended)
+      throw new InternalServerErrorException(
+        'Failed to process property listing.',
+      );
     }
   }
 
@@ -162,9 +186,17 @@ export class PropertiesService {
 
       // D. Apply Extracted Hard Filters
       if (extractedLoc) {
-        qb.andWhere('LOWER(property.location) LIKE LOWER(:loc)', {
-          loc: `%${extractedLoc}%`,
-        });
+        qb.andWhere(
+          new Brackets((orQb) => {
+            orQb
+              .where('LOWER(property.location) LIKE LOWER(:loc)', {
+                loc: `%${extractedLoc}%`,
+              })
+              .orWhere('LOWER(property.address_full) LIKE LOWER(:loc)', {
+                loc: `%${extractedLoc}%`,
+              });
+          }),
+        );
       }
       if (extractedPrice) {
         qb.andWhere('property.priceMonthly <= :maxP', { maxP: extractedPrice });
@@ -244,40 +276,57 @@ export class PropertiesService {
   async update(
     id: string,
     ownerId: string,
-    dto: UpdatePropertyDto,
+    dto: UpdatePropertyDto, // dto.images contains the URLs we want to keep
+    files?: Express.Multer.File[],
   ): Promise<Property> {
-    // 1. Ensure the property exists AND belongs to the requester
     const property = await this.propertyRepo.findOne({
       where: { id, ownerId },
     });
 
-    if (!property) {
-      throw new NotFoundException(
-        'Property not found or you do not have permission to edit it',
-      );
+    if (!property) throw new NotFoundException('Property not found');
+
+    // 1. Start with the images the user decided to KEEP from the frontend
+    let updatedImages = dto.images || property.images;
+
+    // 2. Upload and Append NEW images if any
+    if (files && files.length > 0) {
+      const newUrls = await this.uploadMultipleImages(ownerId, files);
+      updatedImages = [...updatedImages, ...newUrls];
     }
 
-    // 2. Merge the new data into the existing entity
-    // This handles the primitive types (title, price) and the JSONB objects
+    // 3. Update the entity
     Object.assign(property, dto);
-
-    // 3. Mark as needing AI re-optimization if the description changed
-    if (dto.description || dto.features) {
-      property.metadata = {
-        ...property.metadata,
-        ai_optimized: false, // This triggers your AI worker to re-scan the listing
-        last_manual_update: new Date().toISOString(),
-      };
-    }
+    property.images = updatedImages; // Set the final combined list
 
     return await this.propertyRepo.save(property);
   }
 
   async remove(id: string, ownerId: string): Promise<void> {
-    const result = await this.propertyRepo.delete({ id, ownerId });
+    const result = await this.propertyRepo.softDelete({ id, ownerId });
     if (result.affected === 0) {
       throw new NotFoundException('Property not found or unauthorized');
     }
+    const property = await this.findOne(id);
+    await this.tourService.updateApplicationStatus(
+      property.id,
+      PropertyStatus.ARCHIVED,
+      ownerId,
+    );
+  }
+
+  private async uploadMultipleImages(
+    ownerId: string,
+    files: Express.Multer.File[],
+  ): Promise<string[]> {
+    const uploadPromises = files.map((file, index) => {
+      const fileExt = file.originalname.split('.').pop();
+      // Path structure: properties/{ownerId}/{timestamp}-{index}.{ext}
+      const path = `properties/${ownerId}/${Date.now()}-${index}.${fileExt}`;
+
+      return this.storageService.uploadFile(path, file.buffer, file.mimetype);
+    });
+
+    return Promise.all(uploadPromises);
   }
 
   async updatePropertyFeatures(

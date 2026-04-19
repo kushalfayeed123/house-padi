@@ -1,5 +1,5 @@
 // src/modules/renting/renting.module.ts
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RentingController } from './renting.controller';
 
@@ -14,11 +14,12 @@ import { Profile } from '../profile/entities/profile.entity';
 import { ContractService } from './services/contract/contract.service';
 import { LedgerService } from '../finance/services/ledger/ledger.service';
 import { PayoutService } from '../finance/services/payout/payout.service';
-import { StorageService } from 'src/common/storage.service';
 import { FinanceModule } from '../finance/finance.module';
-import { AiService } from 'src/common/ai.service';
 import { PropertiesService } from '../properties/services/properties.service';
-import { ChatBotService } from 'src/common/chat-bot.service';
+import { StorageService } from '../../common/storage.service';
+import { AiService } from '../../common/ai.service';
+import { ChatBotService } from '../../common/chat-bot.service';
+import { PropertiesModule } from '../properties/properties.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ChatBotService } from 'src/common/chat-bot.service';
       Profile,
     ]),
     FinanceModule,
+    forwardRef(() => PropertiesModule),
   ],
   controllers: [RentingController],
   providers: [
@@ -43,6 +45,6 @@ import { ChatBotService } from 'src/common/chat-bot.service';
     PropertiesService,
     ChatBotService,
   ],
-  exports: [LeaseService], // Export if other modules need to check lease status
+  exports: [LeaseService],
 })
 export class RentingModule {}

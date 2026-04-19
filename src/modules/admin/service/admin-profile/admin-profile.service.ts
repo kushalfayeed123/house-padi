@@ -5,10 +5,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { KycVerification } from 'src/modules/profile/entities/kyc-veirifcation.entity';
-import { Profile } from 'src/modules/profile/entities/profile.entity';
-import { KycStatus } from 'src/modules/profile/enums/kyc-status.enum';
+
 import { Repository } from 'typeorm';
+import { KycVerification } from '../../../profile/entities/kyc-veirifcation.entity';
+import { Profile } from '../../../profile/entities/profile.entity';
+import { KycStatus } from '../../../profile/enums/kyc-status.enum';
 
 @Injectable()
 export class AdminProfileService {

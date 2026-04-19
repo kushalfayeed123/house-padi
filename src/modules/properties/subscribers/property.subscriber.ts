@@ -64,7 +64,7 @@ export class PropertySubscriber implements EntitySubscriberInterface<Property> {
         });
 
         console.log(`✅ Property ${id} enriched with AI data.`);
-      } catch (error) {
+      } catch (error: any) {
         // This will now catch the Gemini 'fetch failed' without crashing the app
         console.error('❌ AI Background Enrichment failed:', error.message);
       }

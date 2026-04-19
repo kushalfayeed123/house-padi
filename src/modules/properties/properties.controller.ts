@@ -11,6 +11,11 @@ import {
   Query,
   Delete,
   Patch,
+  FileTypeValidator,
+  MaxFileSizeValidator,
+  ParseFilePipe,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,10 +25,11 @@ import {
 } from '@nestjs/swagger';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { JwtAuthGuard } from '../auth/auth.guard';
-import { GetUser } from 'src/common/decorators/user.decorator';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { SearchPropertyDto } from './dto/search-property.dto';
 import { PropertiesService } from './services/properties.service';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { GetUser } from '../../common/decorators/user.decorator';
 
 @ApiTags('Properties')
 @ApiBearerAuth()
@@ -33,12 +39,21 @@ export class PropertiesController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'List a new property' })
+  @UseInterceptors(FilesInterceptor('files', 15))
   async create(
     @Body() dto: CreatePropertyDto,
-    @GetUser('userId') ownerId: string,
+    @UploadedFiles(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 1024 * 1024 * 10 }), // 10MB limit
+          new FileTypeValidator({ fileType: 'image/(jpeg|png|webp)' }),
+        ],
+      }),
+    )
+    files: Express.Multer.File[],
+    @GetUser('userId') userId: string,
   ) {
-    return this.propertiesService.create(dto, ownerId);
+    return this.propertiesService.create(dto, userId, files);
   }
 
   @Get()
@@ -101,15 +116,19 @@ export class PropertiesController {
     return this.propertiesService.findOne(id);
   }
 
+  // properties.controller.ts
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Update a property listing' })
+  @UseInterceptors(FilesInterceptor('files')) // Add this to handle multipart updates
   async update(
     @Param('id') id: string,
     @GetUser('userId') ownerId: string,
     @Body() dto: UpdatePropertyDto,
+    @UploadedFiles() files: Express.Multer.File[], // Capture new files
   ) {
-    return this.propertiesService.update(id, ownerId, dto);
+    // Pass the files to the service logic
+    return this.propertiesService.update(id, ownerId, dto, files);
   }
 
   @Delete(':id')

@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq'; // Fixed: Import from @nestjs/bullmq
 import { Queue } from 'bullmq'; // Fixed: Import from bullmq
-import { BankDetail } from 'src/modules/profile/entities/bank-details.entity';
+import { BankDetail } from '../../../profile/entities/bank-details.entity';
 
 @Injectable()
 export class PayoutService {

@@ -1,8 +1,8 @@
 // src/modules/admin/admin-profile.controller.ts
 import { Controller, Get, Patch, Body, Param, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/modules/auth/auth.guard';
 import { AdminProfileService } from '../../service/admin-profile/admin-profile.service';
-import { KycStatus } from 'src/modules/profile/enums/kyc-status.enum';
+import { JwtAuthGuard } from '../../../auth/auth.guard';
+import { KycStatus } from '../../../profile/enums/kyc-status.enum';
 
 @Controller('api/v1/admin/profiles')
 @UseGuards(JwtAuthGuard)

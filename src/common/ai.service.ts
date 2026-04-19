@@ -154,7 +154,7 @@ export class AiService implements OnModuleInit {
         ai_summary: validated.ai_summary || validated.ai_summary,
         search_tags: validated.search_tags,
       };
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error(`AI Analysis final failure: ${e.message}`);
       return fallback;
     }

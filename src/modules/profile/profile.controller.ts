@@ -17,11 +17,11 @@ import {
 } from '@nestjs/swagger';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ProfilesService } from './profile.service';
-import { GetUser } from 'src/common/decorators/user.decorator';
 import { CompleteKycDto } from './dto/complete-kyc.dto';
 import { UpdateBankDetailsDto } from './dto/update-bank-details.dto';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { GetUser } from '../../common/decorators/user.decorator';
 
 @ApiTags('Profiles')
 @ApiBearerAuth()

@@ -6,9 +6,9 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { BankDetail } from './entities/bank-details.entity';
 import { CompleteKycDto } from './dto/complete-kyc.dto';
 import { UpdateBankDetailsDto } from './dto/update-bank-details.dto';
-import { StorageService } from 'src/common/storage.service';
 import { KycVerification } from './entities/kyc-veirifcation.entity';
 import { KycStatus } from './enums/kyc-status.enum';
+import { StorageService } from '../../common/storage.service';
 
 @Injectable()
 export class ProfilesService {

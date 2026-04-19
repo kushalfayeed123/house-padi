@@ -6,27 +6,27 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
-import { Profile } from 'src/modules/profile/entities/profile.entity';
+import { Profile } from '../../profile/entities/profile.entity';
 
 @Entity('leases')
 export class Lease {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ name: 'property_id', type: 'uuid' })
-  propertyId: string;
+  propertyId!: string;
 
   @Column({ name: 'owner_id', type: 'uuid' })
-  ownerId: string;
+  ownerId!: string;
 
   @Column({ name: 'renter_id', type: 'uuid' })
-  renterId: string;
+  renterId!: string;
 
   @Column({
     name: 'start_date', // This MUST match the actual DB column name
     type: 'date',
   })
-  startDate: Date;
+  startDate!: Date;
 
   @Column({
     name: 'rent', // Match the DB name
@@ -34,25 +34,25 @@ export class Lease {
     precision: 12,
     scale: 2,
   })
-  rent: number;
+  rent!: number;
 
   @Column({
     name: 'contract_url', // Match the DB name
     nullable: true,
   })
-  contractUrl: string;
+  contractUrl!: string;
 
   @Column({
     name: 'is_active', // Match the DB name
     default: false,
   })
-  isActive: boolean;
+  isActive!: boolean;
 
   @ManyToOne(() => Property)
   @JoinColumn({ name: 'property_id' })
-  property: Property;
+  property!: Property;
 
   @ManyToOne(() => Profile)
   @JoinColumn({ name: 'renter_id' })
-  renter: Profile;
+  renter!: Profile;
 }

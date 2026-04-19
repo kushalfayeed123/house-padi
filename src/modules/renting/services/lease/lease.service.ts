@@ -6,19 +6,21 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  Property,
-  PropertyStatus,
-} from 'src/modules/properties/entities/property.entity';
+
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Lease } from '../../entities/lease.entity';
 import { Application } from '../../entities/application.entity';
 
 import { ContractService } from '../contract/contract.service';
-import { LedgerService } from 'src/modules/finance/services/ledger/ledger.service';
-import { LedgerCategory } from 'src/modules/finance/entities/wallet.entity';
+
 import { Transaction } from '../../entities/transaction.entity';
-import { PayoutService } from 'src/modules/finance/services/payout/payout.service';
+import { LedgerCategory } from '../../../finance/entities/wallet.entity';
+import { LedgerService } from '../../../finance/services/ledger/ledger.service';
+import { PayoutService } from '../../../finance/services/payout/payout.service';
+import {
+  PropertyStatus,
+  Property,
+} from '../../../properties/entities/property.entity';
 
 @Injectable()
 export class LeaseService {

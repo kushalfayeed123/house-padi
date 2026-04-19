@@ -3,23 +3,27 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Application } from '../../entities/application.entity';
+
+import { LeaseService } from '../lease/lease.service';
 import {
   Property,
   PropertyStatus,
-} from 'src/modules/properties/entities/property.entity';
-import { PropertiesService } from 'src/modules/properties/services/properties.service';
-import { LeaseService } from '../lease/lease.service';
+} from '../../../properties/entities/property.entity';
+import { PropertiesService } from '../../../properties/services/properties.service';
 
 // src/modules/renting/services/tour.service.ts
 @Injectable()
 export class TourService {
   constructor(
+    @Inject(forwardRef(() => PropertiesService)) // <--- Add this
     private readonly propertiesService: PropertiesService,
     private readonly leaseService: LeaseService,
     @InjectRepository(Application) private appRepo: Repository<Application>,

@@ -4,9 +4,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { AiService } from 'src/common/ai.service';
 import { Repository, Raw } from 'typeorm';
 import { Property } from '../modules/properties/entities/property.entity';
+import { AiService } from './ai.service';
 
 @Injectable()
 export class AiSyncService {
@@ -72,7 +72,7 @@ export class AiSyncService {
         });
 
         this.logger.log(` Successfully synced Property ID: ${prop.id}`);
-      } catch (err) {
+      } catch (err: any) {
         this.logger.error(`Failed to sync Property ${prop.id}: ${err.message}`);
       }
     }

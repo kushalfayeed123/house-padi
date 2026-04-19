@@ -1,8 +1,6 @@
 // src/properties/entities/property.entity.ts
 import { ApiProperty } from '@nestjs/swagger';
-import { PropertyAnalysis } from 'src/common/schemas/property-analysis.schema';
-import { Profile } from 'src/modules/profile/entities/profile.entity';
-import { Application } from 'src/modules/renting/entities/application.entity';
+
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -12,7 +10,11 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
+  DeleteDateColumn,
 } from 'typeorm';
+import { PropertyAnalysis } from '../../../common/schemas/property-analysis.schema';
+import { Profile } from '../../profile/entities/profile.entity';
+import { Application } from '../../renting/entities/application.entity';
 
 export enum PropertyStatus {
   DRAFT = 'draft',
@@ -82,6 +84,9 @@ export class Property {
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt!: Date;
+
+  @DeleteDateColumn()
+  deletedAt!: Date;
 
   @ApiProperty({
     type: 'object',

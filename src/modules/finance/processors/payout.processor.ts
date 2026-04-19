@@ -6,7 +6,7 @@ import { Job } from 'bullmq';
 import { InternalServerErrorException } from '@nestjs/common';
 import { LedgerCategory } from '../entities/wallet.entity';
 import { LedgerService } from '../services/ledger/ledger.service';
-import { BankDetail } from 'src/modules/profile/entities/bank-details.entity';
+import { BankDetail } from '../../profile/entities/bank-details.entity';
 
 interface PayoutJobData {
   bankDetail: BankDetail;
@@ -42,7 +42,7 @@ export class PayoutProcessor extends WorkerHost {
       );
 
       return { status: 'disbursed', at: new Date().toISOString() };
-    } catch (error) {
+    } catch (error: any) {
       // If we throw here, BullMQ marks the job as 'failed' and retries based on your config
       throw new InternalServerErrorException(
         `Payout failed for transaction ${transactionId}: ${error.message}`,

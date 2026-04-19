@@ -8,6 +8,7 @@ import { RentingModule } from './modules/renting/renting.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FinanceModule } from './modules/finance/finance.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { OwnerModule } from './modules/owner/owner.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AdminModule } from './modules/admin/admin.module';
     RentingModule,
     FinanceModule,
     AdminModule,
+    OwnerModule,
   ],
 })
 export class AppModule {}

@@ -16,8 +16,7 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { LeaseService } from './services/lease/lease.service';
 import { TourService } from './services/tour/tour.service';
 import { PaymentCompleteDto } from './dto/payment-complete.dto';
-import { GetUser } from 'src/common/decorators/user.decorator';
-
+import { GetUser } from '../../common/decorators/user.decorator';
 @ApiTags('Renting')
 @ApiBearerAuth()
 @Controller('renting')

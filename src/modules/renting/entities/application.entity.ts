@@ -1,6 +1,5 @@
 // src/modules/renting/entities/application.entity.ts
-import { Profile } from 'src/modules/profile/entities/profile.entity';
-import { Property } from 'src/modules/properties/entities/property.entity';
+
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -9,6 +8,8 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
+import { Profile } from '../../profile/entities/profile.entity';
+import { Property } from '../../properties/entities/property.entity';
 
 @Entity('applications')
 export class Application {

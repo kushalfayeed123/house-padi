@@ -4,8 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProfilesController } from './profile.controller';
 import { ProfilesService } from './profile.service';
 import { BankDetail } from './entities/bank-details.entity';
-import { StorageService } from 'src/common/storage.service';
 import { KycVerification } from './entities/kyc-veirifcation.entity';
+import { StorageService } from '../../common/storage.service';
 
 @Module({
   imports: [

@@ -8,7 +8,7 @@ export class StorageService {
     process.env.SUPABASE_URL ?? '',
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   );
-
+  private readonly BUCKET = 'house-padi-assets';
   async uploadKycDoc(
     userId: string,
     file: Express.Multer.File,
@@ -40,13 +40,17 @@ export class StorageService {
     mimeType: string,
   ): Promise<string> {
     const { error } = await this.supabase.storage
-      .from('house-padi-assets')
-      .upload(path, buffer, { contentType: mimeType, upsert: true });
+      .from(this.BUCKET)
+      .upload(path, buffer, {
+        contentType: mimeType,
+        upsert: true,
+        cacheControl: '3600',
+      });
 
     if (error) throw error;
 
     const { data: urlData } = this.supabase.storage
-      .from('house-padi-assets')
+      .from(this.BUCKET)
       .getPublicUrl(path);
 
     return urlData.publicUrl;

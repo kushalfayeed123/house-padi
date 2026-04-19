@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 // src/properties/dto/create-property.dto.ts
 import {
   IsString,
@@ -10,11 +12,12 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PropertyStatus } from '../entities/property.entity';
+import { Transform, Type } from 'class-transformer';
 
 export class CreatePropertyDto {
   @ApiProperty({ example: 'Luxury 2-Bedroom Apartment' })
   @IsString()
-  title: string;
+  title!: string;
 
   @IsOptional()
   @IsString()
@@ -22,13 +25,14 @@ export class CreatePropertyDto {
 
   @IsNumber()
   @Min(0)
-  price: number;
+  @Type(() => Number)
+  price!: number;
 
   @IsString()
-  addressFull: string;
+  addressFull!: string;
 
   @IsString()
-  location: string;
+  location!: string;
 
   @IsOptional()
   @IsArray()
@@ -37,6 +41,16 @@ export class CreatePropertyDto {
   @IsOptional()
   @IsObject()
   @ApiProperty({ example: { bedrooms: 2, bathrooms: 2, parking: true } })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch (e) {
+        return value;
+      }
+    }
+    return value;
+  })
   features?: Record<string, any>;
 
   @IsOptional()
@@ -52,8 +66,9 @@ export class CreatePropertyDto {
   lng?: number;
 
   @ApiProperty({ example: 12 })
-  leaseDurationMonths: number;
+  @Type(() => Number) // <--- CRITICAL
+  leaseDurationMonths!: number;
 
   @ApiProperty({ example: 'Standard Tenancy Agreement text...' })
-  agreementContent: string;
+  agreementContent!: string;
 }

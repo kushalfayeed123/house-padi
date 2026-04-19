@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
-import { AiService } from 'src/common/ai.service';
-import { StorageService } from 'src/common/storage.service';
+import { StorageService } from '../../../../common/storage.service';
 
 export interface ILeasePdfData {
   leaseId: string;
@@ -18,10 +17,7 @@ export interface ILeasePdfData {
 
 @Injectable()
 export class ContractService {
-  constructor(
-    private readonly storageService: StorageService,
-    private readonly aiService: AiService,
-  ) {}
+  constructor(private readonly storageService: StorageService) {}
 
   async generateLeasePDF(data: ILeasePdfData): Promise<string> {
     let browser;

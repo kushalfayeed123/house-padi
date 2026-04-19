@@ -43,8 +43,9 @@ export class ChatBotService {
                       Rules:
                       - "bedrooms": Extract ONLY the number. (e.g., "3 bedroom", "three bed", "3 rooms" -> 3).
                       - "maxPrice": Extract as a raw number. (e.g., "5 million", "5M" -> 5000000).
-                      - "location": Extract the neighborhood or city.
-                      - "vibe": Extract the descriptive "feel" (e.g., "luxury", "quiet", "modern").
+                      - "location": Extract the most specific location info provided. 
+                        PRIORITIZE: Estate Names (e.g. "Chevron Estate"), Neighborhoods (e.g. "Maitama"), or Streets.
+                        If the user says "3 bedroom in Lekki Phase 1", extract "Lekki Phase 1", NOT just "Lekki" or "Lagos".                      - "vibe": Extract the descriptive "feel" (e.g., "luxury", "quiet", "modern").
                       - Convert currency slang like "5M" to 5000000 and "500k" to 500000.
                       Extract search parameters from the user message.
                       - "location": ONLY extract if a specific area/city is mentioned. If the user does not mention a place, return null. DO NOT guess or default to Lekki.
