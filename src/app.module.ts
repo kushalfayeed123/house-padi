@@ -9,6 +9,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { FinanceModule } from './modules/finance/finance.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { OwnerModule } from './modules/owner/owner.module';
+import { HttpModule } from '@nestjs/axios'; // Correct import
+import { NewsController } from './common/news.controller';
+import { NewsService } from './common/news.service';
 
 @Module({
   imports: [
@@ -42,6 +45,9 @@ import { OwnerModule } from './modules/owner/owner.module';
     FinanceModule,
     AdminModule,
     OwnerModule,
+    HttpModule,
   ],
+  controllers: [NewsController],
+  providers: [NewsService],
 })
 export class AppModule {}
