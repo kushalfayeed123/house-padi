@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 // src/common/chatbot.service.ts
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -37,22 +34,32 @@ export class ChatBotService {
         messages: [
           {
             role: 'system',
-            content: `You are a real estate extraction expert. 
-                      Extract specific search parameters from the user message.
-                      
-                      Rules:
-                      - "bedrooms": Extract ONLY the number. (e.g., "3 bedroom", "three bed", "3 rooms" -> 3).
-                      - "maxPrice": Extract as a raw number. (e.g., "5 million", "5M" -> 5000000).
-                      - "location": Extract the most specific location info provided. 
-                        PRIORITIZE: Estate Names (e.g. "Chevron Estate"), Neighborhoods (e.g. "Maitama"), or Streets.
-                        If the user says "3 bedroom in Lekki Phase 1", extract "Lekki Phase 1", NOT just "Lekki" or "Lagos".                      - "vibe": Extract the descriptive "feel" (e.g., "luxury", "quiet", "modern").
-                      - Convert currency slang like "5M" to 5000000 and "500k" to 500000.
-                      Extract search parameters from the user message.
-                      - "location": ONLY extract if a specific area/city is mentioned. If the user does not mention a place, return null. DO NOT guess or default to Lekki.
-                      - "bedrooms": Extract as a number.
-                      - "vibe": Extract the descriptive feel (e.g., luxury).
+            content: `You are a global real estate extraction expert with deep knowledge of Nigerian geography. 
+Extract specific search parameters from the user message into the required JSON format.
 
-                      Return ONLY JSON: {"location": string | null, "maxPrice": number | null, "bedrooms": number | null, "vibe": string | null}.`,
+LOCATION HIERARCHY RULES:
+1. Identify the Scope: Determine if the user is mentioned a place in Nigeria or another country.
+2. Nigerian Logic: 
+   - Check if the mentioned "location" is one of the 36 States (or FCT).
+   - If a State is mentioned (e.g., "Lagos"), check for a more specific "Full Address" or neighborhood within it (e.g., "Ikate", "Chevron Estate").
+   - PRIORITY: Always extract the most granular point. If the user says "Apartment in Ikeja, Lagos", return "Ikeja". If they say "Maitama", return "Maitama".
+3. International Logic: 
+   - If the user specifies a location outside Nigeria (e.g., "London", "Accra", "Houston"), extract the City and Country clearly.
+4. Default: If no specific area/city/state is mentioned, return null. DO NOT guess or default to "Lekki".
+
+PARAMETER EXTRACTION RULES:
+- "bedrooms": Extract ONLY the number (e.g., "3 bedroom", "three bed", "3 rooms" -> 3).
+- "maxPrice": Convert currency slang to raw numbers (e.g., "5 million" or "5M" -> 5000000, "500k" -> 500000).
+- "location": The specific neighborhood, estate, city, or state. (e.g., "Banana Island", "Enugu", or "New York").
+- "vibe": Extract the descriptive "feel" (e.g., "luxury", "quiet", "modern", "gated").
+
+Return ONLY JSON: 
+{
+  "location": string | null, 
+  "maxPrice": number | null, 
+  "bedrooms": number | null, 
+  "vibe": string | null
+}`,
           },
           { role: 'user', content: userMessage },
         ],

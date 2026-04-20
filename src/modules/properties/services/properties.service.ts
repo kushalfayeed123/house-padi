@@ -137,7 +137,7 @@ export class PropertiesService {
   async findOne(id: string): Promise<Property> {
     const property = await this.propertyRepo.findOne({
       where: { id },
-      relations: ['applications'],
+      relations: ['applications', 'owner'],
     });
     if (!property) throw new NotFoundException('Property not found');
     return property;
