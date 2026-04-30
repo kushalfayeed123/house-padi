@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -6,15 +5,32 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
 // src/properties/ai.service.ts
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { env, pipeline } from '@xenova/transformers';
 import {
   AnalysisSchema,
   PropertyAnalysis,
 } from './schemas/property-analysis.schema';
+import {
+  PadiContext,
+  PropertySummary,
+} from '../modules/padi/interfaces/padi-logic.interface';
+import { Property } from '../modules/properties/entities/property.entity';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+interface OpenRouterResponse {
+  choices: Array<{
+    message: {
+      content: string | null;
+    };
+  }>;
+}
 
 @Injectable()
 export class AiService implements OnModuleInit {
@@ -74,7 +90,6 @@ export class AiService implements OnModuleInit {
     description: string,
     location: string,
   ): Promise<PropertyAnalysis> {
-    // Update your system prompt to this:
     const systemPrompt = `You are a Real Estate Marketing Expert. 
           Return ONLY a JSON object with this exact structure:
           {
@@ -160,64 +175,125 @@ export class AiService implements OnModuleInit {
     }
   }
 
-  async generateEmbedding(text: string): Promise<number[]> {
-    const output = await this.extractor(text, {
-      pooling: 'mean',
-      normalize: true,
-    });
-    return Array.from(output.data);
-  }
-
   async synthesizeSearchResponse(
     query: string,
-    results: any[],
+    primaryResults: Property[],
+    secondaryResults: Property[],
+    context: PadiContext,
+    action: string,
+    payload: any,
+    isFirstMessage: boolean = false,
   ): Promise<string> {
-    const systemPrompt = `You are 'Padi', the AI heartbeat of HousePadi. 
-    Your goal is to explain search results to a user in a helpful, conversational professional tone.
-    
-    CRITICAL RULES:
-    1. If results are empty, apologize warmly and suggest looking in a nearby area (e.g., if Lekki is empty, suggest Ikate or Ajah).
-    2. If there's a mismatch (e.g., they asked for 3 beds, you found 2), explain the benefit of the current result (e.g., 'It's detached', 'Better security', 'Cheaper').
-    3. Use relatable terms: 'Clean spot', 'Standard security'.
-    4. Keep it to 3 sentences max. Do NOT list data in a table.
-    `;
+    const apiKey = this.configService.get<string>('OPENROUTER_API_KEY');
+    if (!apiKey)
+      throw new InternalServerErrorException(
+        'OPENROUTER_API_KEY is not defined.',
+      );
 
-    const summaryData = results.slice(0, 2).map((r) => ({
+    // Prepare a mapping of the property results for the LLM to read easily
+    const mapSummary = (r: Property) => ({
       title: r.title,
       location: r.location,
       price: r.price,
+      id: r.id,
       bedrooms: r.features?.bedrooms,
-    }));
+    });
+
+    const primaryData = primaryResults.slice(0, 2).map(mapSummary);
+    const secondaryData = secondaryResults.slice(0, 2).map(mapSummary);
+
+    const systemPrompt = `
+    You are the Senior Real Estate Advisor at HousePadi. 
+    Acknowledge the Action Taken: ${action}.
+
+    STRICT LOGIC SWITCH:
+    
+    SWITCH (Action) {
+      CASE 'PROPERTY_CREATED':
+        - Logic: Success. Confirm draft creation for "${payload?.title}" (ID: ${payload?.id}).
+        - Goal: Ask for photos or more features to finish the listing.
+        
+      CASE 'LISTING_ERROR':
+        - Logic: Failure. Check payload.message: "${payload?.message}".
+        - IF message contains "Missing:":
+            Extract the missing fields and tell the user exactly what they are. 
+            Example: "I need your Property Title and Lease Duration to save this."
+        - IF actionRequired is "KYC_VERIFICATION":
+            Tell them to complete KYC in their profile.
+        - IF actionRequired is "BANK_SETUP":
+            Tell them to add bank details.
+            
+      CASE 'GET_RENTAL_STATUS':
+        - Logic: Summarize user data: ${JSON.stringify(payload)}.
+        - Update them on active leases or application counts.
+        
+      CASE 'SEARCH_PROPERTIES':
+       - IF Primary Data has items:
+            Summarize the exact matches. Keep it concise.
+        - IF Primary Data is EMPTY but Secondary Data has items:
+            DO NOT say "No results found." 
+            Instead, say: "I couldn't find an exact match for [User Query], but I found a great alternative in [Location]: [Title]."
+            Mention why it's a good alternative (e.g., similar area or better features).
+        - IF BOTH are empty:
+            Apologize and ask the user to refine their location, price, or bedroom count.
+    }
+
+    STYLE RULES:
+    - ${isFirstMessage ? `Start with "Hello ${context.userName},"` : 'Do not use a greeting.'}
+    - If user asks a general question about HousePadi, answer accurately.
+    - If info is missing for a listing, be specific. Don't say "details are missing," say "I need the lease duration in months."
+    - No technical jargon (payload, JSON, etc).
+  `;
 
     try {
-      const response = await this.fetchWithRetry(
+      const response = await fetch(
         'https://openrouter.ai/api/v1/chat/completions',
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${this.configService.get('OPENROUTER_API_KEY')}`,
+            Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             model: 'openrouter/free',
             messages: [
               {
-                role: 'user', // Using 'user' role for instructions + data to avoid 400 errors
-                content: `${systemPrompt}\n\nUser Search: "${query}"\nFound Data: ${JSON.stringify(summaryData)}`,
+                role: 'system',
+                content: systemPrompt,
+              },
+              {
+                role: 'user',
+                content: `User asked: "${query}"\nTool Results: ${JSON.stringify(payload)}\nPrimary Data: ${JSON.stringify(primaryData)}\nSecondary Data: ${JSON.stringify(secondaryData)}`,
               },
             ],
-            temperature: 0.7, // Higher temp for natural speech
+            temperature: 0.5, // Lower temperature for more factual responses
           }),
         },
       );
 
-      const data = await response.json();
-      return (
-        data.choices?.[0]?.message?.content ||
-        "I found some spots you'll like! Check them out below."
-      );
+      if (!response.ok) throw new Error('AI Provider Error');
+
+      const result = await response.json();
+      const aiContent = result.choices[0]?.message?.content;
+
+      return typeof aiContent === 'string'
+        ? aiContent
+        : "I've processed your request. How else can I assist you with your property needs?";
     } catch (error) {
-      return 'I found some great options for you. Take a look!';
+      // Graceful fallback if the AI service fails
+      if (action === 'LISTING_ERROR') {
+        return `I encountered an issue while trying to save your listing: ${payload?.message || 'Missing required information'}. Please provide the full details so I can try again.`;
+      }
+      return `Hello ${context.userName}, how can I help you further?`;
     }
+  }
+
+  // Implementation for vector embeddings
+  async generateEmbedding(text: string): Promise<number[]> {
+    const output = await this.extractor(text, {
+      pooling: 'mean',
+      normalize: true,
+    });
+    return Array.from(output.data);
   }
 }

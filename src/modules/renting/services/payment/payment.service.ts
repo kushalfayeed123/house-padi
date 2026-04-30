@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
 // src/modules/renting/services/payment.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Inject } from '@nestjs/common';
 import type {
   IPaymentProvider,
   IPaymentVerificationResult,
@@ -11,6 +11,7 @@ import { LeaseService } from '../lease/lease.service';
 export class PaymentService {
   constructor(
     private leaseService: LeaseService,
+    @Inject('PAYMENT_PROVIDER')
     private paymentProvider: IPaymentProvider, // Injected via a Provider Token
   ) {}
 

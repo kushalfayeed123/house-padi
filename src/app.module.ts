@@ -12,6 +12,8 @@ import { OwnerModule } from './modules/owner/owner.module';
 import { HttpModule } from '@nestjs/axios'; // Correct import
 import { NewsController } from './common/news.controller';
 import { NewsService } from './common/news.service';
+import { PadiModule } from './modules/padi/padi.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { NewsService } from './common/news.service';
     AdminModule,
     OwnerModule,
     HttpModule,
+    PadiModule,
+    ChatModule,
   ],
   controllers: [NewsController],
   providers: [NewsService],

@@ -21,6 +21,10 @@ import { StorageService } from '../../../common/storage.service';
 import { Profile } from '../../profile/entities/profile.entity';
 import { KycStatus } from '../../profile/enums/kyc-status.enum';
 import { TourService } from '../../renting/services/tour/tour.service';
+import {
+  ExtractedFilters,
+  PadiServiceResponse,
+} from '../../padi/interfaces/padi-logic.interface';
 
 @Injectable()
 export class PropertiesService {
@@ -122,6 +126,7 @@ export class PropertiesService {
       order: { createdAt: 'DESC' },
     });
   }
+
   async findFeaured(limit = 10, offset = 0): Promise<Property[]> {
     return await this.propertyRepo.find({
       where: {
@@ -147,119 +152,87 @@ export class PropertiesService {
     return await this.propertyRepo.find({ where: { ownerId } });
   }
 
-  async findAiRecommended(dto: SearchPropertyDto): Promise<any> {
-    const { chatPrompt, lat, lng, radius = 5, maxPrice, location, tags } = dto;
-    const qb = this.propertyRepo.createQueryBuilder('property');
+  async findAiRecommended(
+    dto: SearchPropertyDto,
+  ): Promise<Omit<PadiServiceResponse, 'padi_summary'>> {
+    const { chatPrompt, location } = dto;
+    // 1. Extract Intent
+    const extracted: ExtractedFilters = chatPrompt
+      ? await this.chatBotService.extractSearchFilters(chatPrompt)
+      : { location: null, maxPrice: null, bedrooms: null, vibe: null };
 
-    // 1. Mandatory Filter: Only available listings
-    qb.where('property.status = :status', { status: PropertyStatus.AVAILABLE });
+    const searchLocation = extracted.location || location;
 
-    let extractedLoc = location;
-    let extractedPrice = maxPrice;
+    // 2. Primary Query: Strict Geography + All Filters
+    const primaryQb = this.propertyRepo
+      .createQueryBuilder('property')
+      .where('property.status = :status', { status: PropertyStatus.AVAILABLE });
 
-    // --- HYBRID AI LOGIC ---
-    if (chatPrompt) {
-      // A. Extract Hard Filters (Location/Price) via LLM
-      const extracted =
-        await this.chatBotService.extractSearchFilters(chatPrompt);
-      extractedLoc = extracted.location || location;
-      extractedPrice = extracted.maxPrice || maxPrice;
-      if (extracted.bedrooms) {
-        qb.andWhere(
-          "(property.features->>'bedrooms')::int BETWEEN :min AND :max",
-          {
-            min: extracted.bedrooms - 1,
-            max: extracted.bedrooms,
-          },
-        );
-      }
-
-      // B. Generate Semantic Vector (The "Vibe" check)
-      const vibeVector = await this.aiService.generateEmbedding(chatPrompt);
-      const vectorString = `[${vibeVector.join(',')}]`;
-
-      // C. Apply Vector Ranking (pgvector)
-
-      qb.addSelect(`property.embedding <=> :vector`, 'vibe_score');
-      qb.setParameter('vector', vectorString);
-      qb.orderBy('vibe_score', 'ASC');
-
-      // D. Apply Extracted Hard Filters
-      if (extractedLoc) {
-        qb.andWhere(
-          new Brackets((orQb) => {
-            orQb
-              .where('LOWER(property.location) LIKE LOWER(:loc)', {
-                loc: `%${extractedLoc}%`,
-              })
-              .orWhere('LOWER(property.address_full) LIKE LOWER(:loc)', {
-                loc: `%${extractedLoc}%`,
-              });
-          }),
-        );
-      }
-      if (extractedPrice) {
-        qb.andWhere('property.priceMonthly <= :maxP', { maxP: extractedPrice });
-      }
-    } else {
-      // Default sorting if no AI prompt is provided
-      qb.orderBy('property.isFeatured', 'DESC');
-      qb.addOrderBy('property.createdAt', 'DESC');
+    if (searchLocation) {
+      primaryQb.andWhere(
+        new Brackets((qb) => {
+          qb.where('LOWER(property.location) LIKE LOWER(:loc)', {
+            loc: `%${searchLocation}%`,
+          }).orWhere('LOWER(property.address_full) LIKE LOWER(:loc)', {
+            loc: `%${searchLocation}%`,
+          });
+        }),
+      );
     }
 
-    // Inside findAiRecommended in properties.service.ts
-
-    if (tags && tags.length > 0) {
-      // Use '->>' to get the field as text or '->' to get it as JSON
-      // Then use '@>' to check if that specific array contains your tags
-      qb.andWhere("property.metadata->'search_tags' @> :tagList", {
-        tagList: JSON.stringify(tags),
+    if (extracted.maxPrice) {
+      primaryQb.andWhere('property.price <= :price', {
+        price: extracted.maxPrice,
       });
     }
 
-    // --- GEOSPATIAL FILTER (PostGIS) ---
-    // This uses the lat/lng/radius from your DTO
-    if (lat && lng) {
-      qb.andWhere(
-        `ST_DWithin(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326), :dist)`,
-        {
-          lng: Number(lng),
-          lat: Number(lat),
-          dist: (radius || 5) * 1000, // Convert km to meters
-        },
-      );
-
-      // If there's no AI "vibe score", sort by physical proximity
-      if (!chatPrompt) {
-        qb.addOrderBy(
-          `ST_Distance(property.coords, ST_SetSRID(ST_Point(:lng, :lat), 4326))`,
-          'ASC',
-        );
-      }
+    if (extracted.bedrooms) {
+      primaryQb.andWhere("(property.features->>'bedrooms')::int = :beds", {
+        beds: extracted.bedrooms,
+      });
     }
 
-    // Execution
-    const results = await qb.take(20).getMany();
+    const primaryResults = await primaryQb
+      .orderBy('property.createdAt', 'DESC')
+      .take(5)
+      .getMany();
 
-    // --- THE CONVERSATIONAL WRAPPER ---
-    // Padi explains the results based on everything we found (or didn't find)
-    let padiMessage = '';
-    if (chatPrompt) {
-      padiMessage = await this.aiService.synthesizeSearchResponse(
-        chatPrompt,
-        results,
-      );
-    } else {
-      padiMessage =
-        results.length > 0
-          ? 'Here are the top-rated spots near you right now!'
-          : "it's a bit empty around here. Want to try widening your search radius?";
+    // 3. Secondary Query: Strict Geography but "Soft" on Price/Features
+    const secondaryResults: Property[] = [];
+    if (searchLocation) {
+      const secondaryQb = this.propertyRepo
+        .createQueryBuilder('property')
+        .where('property.status = :status', {
+          status: PropertyStatus.AVAILABLE,
+        })
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where('LOWER(property.location) LIKE LOWER(:loc)', {
+              loc: `%${searchLocation}%`,
+            }).orWhere('LOWER(property.address_full) LIKE LOWER(:loc)', {
+              loc: `%${searchLocation}%`,
+            });
+          }),
+        );
+
+      const primaryIds = primaryResults.map((p) => p.id);
+      if (primaryIds.length > 0) {
+        secondaryQb.andWhere('property.id NOT IN (:...ids)', {
+          ids: primaryIds,
+        });
+      }
+
+      const results = await secondaryQb
+        .orderBy('property.createdAt', 'DESC')
+        .take(3)
+        .getMany();
+      secondaryResults.push(...results);
     }
 
     return {
-      padi_summary: padiMessage,
-      count: results.length,
-      data: results,
+      count: primaryResults.length,
+      data: primaryResults,
+      suggestions: secondaryResults,
     };
   }
 

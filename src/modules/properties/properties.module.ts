@@ -44,5 +44,6 @@ import { RentingModule } from '../renting/renting.module';
     LedgerService,
     PayoutService,
   ],
+  exports: [PropertiesService],
 })
 export class PropertiesModule {}

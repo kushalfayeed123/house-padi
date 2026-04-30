@@ -1,93 +1,162 @@
-// src/common/chatbot.service.ts
+// src/common/chat-bot.service.ts
+
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Groq from 'groq-sdk';
-
-// 1. Define an explicit interface for the AI output
-export interface ExtractedFilters {
-  location: string | null;
-  maxPrice: number | null;
-  bedrooms: number | null;
-  vibe: string | null;
-}
+import {
+  PadiExecutionPlan,
+  ExtractedFilters,
+  PadiContext,
+} from '../modules/padi/interfaces/padi-logic.interface';
 
 @Injectable()
 export class ChatBotService {
-  // 2. Explicitly type the groq instance
   private readonly groq: Groq;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('GROQ_API_KEY');
-
     if (!apiKey) {
-      throw new InternalServerErrorException('GROQ_API_KEY is missing');
+      throw new InternalServerErrorException(
+        'The GROQ_API_KEY environment variable is not defined.',
+      );
     }
-
-    // 3. Initialize inside the constructor to ensure 'this' is resolved
     this.groq = new Groq({ apiKey });
   }
 
-  async extractSearchFilters(userMessage: string): Promise<ExtractedFilters> {
-    try {
-      // 4. Use 'await' clearly and capture the completion
-      const completion = await this.groq.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: `You are a global real estate extraction expert with deep knowledge of Nigerian geography. 
-Extract specific search parameters from the user message into the required JSON format.
+  /**
+   * Generates a strictly typed execution plan based on user intent and session context.
+   * This determines which tool (Search, List, etc.) the orchestrator should trigger.
+   */
+  async generateExecutionPlan(
+    message: string,
+    context: PadiContext,
+    history: { role: 'user' | 'assistant'; content: string }[] = [], // Added history parameter
+  ): Promise<PadiExecutionPlan> {
+    const completion = await this.groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: `You are the HousePadi System Brain. Your goal is to map user intent to the correct tool while strictly returning a valid **json** object.
 
-LOCATION HIERARCHY RULES:
-1. Identify the Scope: Determine if the user is mentioned a place in Nigeria or another country.
-2. Nigerian Logic: 
-   - Check if the mentioned "location" is one of the 36 States (or FCT).
-   - If a State is mentioned (e.g., "Lagos"), check for a more specific "Full Address" or neighborhood within it (e.g., "Ikate", "Chevron Estate").
-   - PRIORITY: Always extract the most granular point. If the user says "Apartment in Ikeja, Lagos", return "Ikeja". If they say "Maitama", return "Maitama".
-3. International Logic: 
-   - If the user specifies a location outside Nigeria (e.g., "London", "Accra", "Houston"), extract the City and Country clearly.
-4. Default: If no specific area/city/state is mentioned, return null. DO NOT guess or default to "Lekki".
+SCENARIO REGISTRY:
 
-PARAMETER EXTRACTION RULES:
-- "bedrooms": Extract ONLY the number (e.g., "3 bedroom", "three bed", "3 rooms" -> 3).
-- "maxPrice": Convert currency slang to raw numbers (e.g., "5 million" or "5M" -> 5000000, "500k" -> 500000).
-- "location": The specific neighborhood, estate, city, or state. (e.g., "Banana Island", "Enugu", or "New York").
-- "vibe": Extract the descriptive "feel" (e.g., "luxury", "quiet", "modern", "gated").
+1. **Discovery & Search**: User is browsing, looking for apartments, or asking about availability.
+   - Tool: SEARCH_PROPERTIES
+   - Logic: Default action for any query describing a home requirement (e.g., "2 bedrooms in Jos").
 
-Return ONLY JSON: 
+2. **Tours & Applications**: User says "I want to visit," "Book a tour," or "Apply for [Property Name]."
+   - Tool: CREATE_APPLICATION
+   - Requirements: Needs a property ID or Name. If missing, ask the user to select a property first[cite: 1, 7].
+
+3. **Lease Management**: User says "Send the contract," "Prepare the agreement," or "I don't want this lease anymore."
+   - Tools: PREPARE_LEASE (to create) or DECLINE_LEASE (to reject)[cite: 2].
+
+4. **Payments & Closing**: User says "I have paid," "Finalize my move-in," or provides a reference like "REF-123."
+   - Tool: COMPLETE_RENTAL
+   - Args: Requires "leaseId" and "paymentRef"[cite: 2, 4].
+
+5. **Landlord/Owner Actions**: User says "Show my properties," "Approve this tenant," or "Who applied?"
+   - Tools: GET_OWNER_DASHBOARD or UPDATE_APPLICATION_STATUS[cite: 1].
+
+6. **Status Checks**: User asks "Where is my application?" or "What is my current rent status?"
+   - Tools: GET_USER_APPLICATIONS or GET_RENTAL_STATUS[cite: 1, 2].
+
+STRICT JSON OUTPUT FORMAT:
 {
-  "location": string | null, 
-  "maxPrice": number | null, 
-  "bedrooms": number | null, 
-  "vibe": string | null
-}`,
-          },
-          { role: 'user', content: userMessage },
-        ],
-        model: 'llama-3.1-8b-instant',
-        response_format: { type: 'json_object' },
-      });
-
-      // 5. Safely access members with optional chaining and local variables
-      const choice = completion.choices[0];
-      const content = choice?.message?.content;
-
-      if (!content) {
-        return { location: null, maxPrice: null, bedrooms: null, vibe: null };
-      }
-
-      // 6. Cast JSON.parse to our interface to satisfy 'no-unsafe-assignment'
-      const parsedData = JSON.parse(content) as ExtractedFilters;
-
-      return {
-        location: parsedData.location ?? null,
-        maxPrice: parsedData.maxPrice ?? null,
-        bedrooms: parsedData.bedrooms ?? null,
-        vibe: parsedData.vibe ?? null,
-      };
-    } catch (error) {
-      console.error('Groq AI Error:', error);
-      // Return a safe default instead of throwing to keep the chat alive
-      return { location: null, maxPrice: null, bedrooms: null, vibe: null };
+  "toolCalls": [
+    {
+      "name": "PadiToolName",
+      "arguments": { "key": "value" }
     }
+  ],
+  "reasoning": "Brief explanation of why this tool was chosen."
+}
+
+CRITICAL RULES:
+- If the user provides a payment reference, ALWAYS prioritize COMPLETE_RENTAL[cite: 4, 6].
+- If the user hasn't specified a property yet, NEVER use CREATE_APPLICATION; use SEARCH_PROPERTIES instead.
+- If the user is just chatting (e.g., "Hello"), return an empty toolCalls array.
+  `,
+        },
+        ...history, // Inject history turns before the current user message
+        { role: 'user', content: message },
+      ],
+      model: 'llama-3.1-8b-instant',
+      response_format: { type: 'json_object' },
+    });
+
+    const content =
+      completion.choices[0]?.message?.content || '{"toolCalls": []}';
+    return JSON.parse(content) as PadiExecutionPlan;
+  }
+
+  /**
+   * Extracts specific real estate filters (Location, Price, Bedrooms) from natural language.
+   * Used by PropertiesService to refine database queries.
+   */
+  async extractSearchFilters(userMessage: string): Promise<ExtractedFilters> {
+    const completion = await this.groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: `Extract real estate parameters from the query into a JSON object.
+          Include: location (string), maxPrice (number), bedrooms (number), vibe (string).
+          If a value is missing, return null for that key.`,
+        },
+        { role: 'user', content: userMessage },
+      ],
+      model: 'llama-3.1-8b-instant',
+      response_format: { type: 'json_object' },
+    });
+
+    const content = completion.choices[0]?.message?.content || '{}';
+    const parsed = JSON.parse(content) as Partial<ExtractedFilters>;
+
+    return {
+      location: parsed.location ?? null,
+      maxPrice: parsed.maxPrice ?? null,
+      bedrooms: parsed.bedrooms ?? null,
+      vibe: parsed.vibe ?? null,
+    };
+  }
+
+  /**
+   * Synthesizes the final conversational response for the user.
+   * It takes the primary and secondary results and frames them in a human-like, professional tone.
+   */
+  async synthesizeResponse(
+    userMessage: string,
+    toolResults: Array<{
+      tool: string;
+      primary: string[];
+      secondary: string[];
+    }>,
+    userName: string,
+  ): Promise<string> {
+    const completion = await this.groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: `You are 'Padi', a sophisticated and empathetic real estate advisor for HousePadi.
+          
+          RULES:
+          1. Use formal, professional, and human-like English. Never use slang.
+          2. Acknowledge the user's specific request for "${userMessage}".
+          3. Emphasize Primary results as perfect matches.
+          4. Introduce Secondary results as "refined alternatives for your consideration."
+          5. Maximum of 4 sentences. Be concise but warm.`,
+        },
+        {
+          role: 'user',
+          content: `User Name: ${userName} | Data: ${JSON.stringify(toolResults)}`,
+        },
+      ],
+      model: 'llama-3.1-8b-instant',
+    });
+
+    return (
+      completion.choices[0]?.message?.content ||
+      'I have curated several exceptional options for your review.'
+    );
   }
 }

@@ -10,35 +10,40 @@ import { Property } from '../../properties/entities/property.entity';
 import { BankDetail } from './bank-details.entity';
 import { KycVerification } from './kyc-veirifcation.entity';
 import { KycStatus } from '../enums/kyc-status.enum';
+import { Lease } from '../../renting/entities/lease.entity';
 
 @Entity({ name: 'profiles' })
 export class Profile {
   @PrimaryColumn('uuid')
-  id: string; // This matches the Supabase Auth User ID
+  id!: string; // This matches the Supabase Auth User ID
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column({ name: 'first_name', nullable: true })
-  firstName: string;
+  firstName!: string;
 
   @Column({ name: 'last_name', nullable: true })
-  lastName: string;
+  lastName!: string;
 
   @Column({ name: 'avatar_url', nullable: true })
-  avatarUrl: string;
+  avatarUrl!: string;
 
   @Column({ default: 'user' }) // 'user', 'agent', 'admin'
-  role: string;
+  role!: string;
 
   @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @Column({ name: 'phone_number', nullable: true })
-  phoneNumber: string;
+  phoneNumber!: string;
 
   @OneToMany(() => Property, (property) => property.owner)
-  properties: Property[];
+  properties!: Property[];
+
+  @OneToMany(() => Lease, (lease) => lease.renter)
+  // Note: Ensure the 'Lease' entity has a 'renter' ManyToOne relation
+  leases!: any[];
 
   @Column({
     name: 'kyc_status',
@@ -46,10 +51,10 @@ export class Profile {
     enum: KycStatus,
     default: KycStatus.PENDING,
   })
-  kycStatus: KycStatus;
+  kycStatus!: KycStatus;
   @OneToOne(() => KycVerification, (kyc) => kyc.profile)
-  kyc: KycVerification; // This links to the detailed KYC record
+  kyc!: KycVerification; // This links to the detailed KYC record
 
   @OneToOne(() => BankDetail, (bank) => bank.profile)
-  bankDetail: BankDetail;
+  bankDetail!: BankDetail;
 }

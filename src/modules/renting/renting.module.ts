@@ -20,6 +20,10 @@ import { StorageService } from '../../common/storage.service';
 import { AiService } from '../../common/ai.service';
 import { ChatBotService } from '../../common/chat-bot.service';
 import { PropertiesModule } from '../properties/properties.module';
+import {
+  MockPaymentProvider,
+  PaymentService,
+} from './services/payment/payment.service';
 
 @Module({
   imports: [
@@ -37,6 +41,7 @@ import { PropertiesModule } from '../properties/properties.module';
   providers: [
     TourService,
     LeaseService,
+    PaymentService,
     ContractService,
     LedgerService,
     PayoutService,
@@ -44,7 +49,11 @@ import { PropertiesModule } from '../properties/properties.module';
     AiService,
     PropertiesService,
     ChatBotService,
+    {
+      provide: 'PAYMENT_PROVIDER', // This must match the @Inject() token above
+      useClass: MockPaymentProvider, // Provide your mock or real implementation
+    },
   ],
-  exports: [LeaseService],
+  exports: [LeaseService, PaymentService, 'PAYMENT_PROVIDER'],
 })
 export class RentingModule {}

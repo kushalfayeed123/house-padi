@@ -13,14 +13,15 @@ export enum UserRole {
   RENTER = 'renter',
   OWNER = 'owner',
   ADMIN = 'admin',
+  GUEST = 'guest',
 }
 export class RegisterDto {
   @ApiProperty({
-    example: 'segun.ajanaku@example.com',
+    example: 'test.user@example.com',
     description: 'The unique email address for the user',
   })
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: 'PadiSecure123!',
@@ -29,17 +30,17 @@ export class RegisterDto {
   })
   @IsString()
   @MinLength(8)
-  password: string;
+  password!: string;
 
   @ApiProperty({ example: 'Oluwasegun', description: 'User first name' })
   @IsString()
   @IsNotEmpty()
-  firstName: string;
+  firstName!: string;
 
   @ApiProperty({ example: 'Ajanaku', description: 'User last name' })
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  lastName!: string;
 
   @ApiProperty({
     enum: UserRole,
@@ -47,7 +48,7 @@ export class RegisterDto {
     description: 'The role of the user within the platform',
   })
   @IsEnum(UserRole)
-  role: UserRole;
+  role!: UserRole;
 
   @ApiPropertyOptional({
     example: '+2348012345678',

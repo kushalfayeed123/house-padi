@@ -8,6 +8,7 @@ import {
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PadiContext } from '../../padi/interfaces/padi-logic.interface';
 
 export class SearchPropertyDto {
   @IsOptional()
@@ -52,4 +53,6 @@ export class SearchPropertyDto {
   @IsOptional()
   @IsString()
   chatPrompt?: string; // <--- The "Vibe" search input
+
+  context!: PadiContext; // Required to satisfy strictly typed service calls
 }

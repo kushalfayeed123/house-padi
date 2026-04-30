@@ -23,7 +23,7 @@ import { PropertiesService } from '../../../properties/services/properties.servi
 @Injectable()
 export class TourService {
   constructor(
-    @Inject(forwardRef(() => PropertiesService)) // <--- Add this
+    @Inject(forwardRef(() => PropertiesService))
     private readonly propertiesService: PropertiesService,
     private readonly leaseService: LeaseService,
     @InjectRepository(Application) private appRepo: Repository<Application>,

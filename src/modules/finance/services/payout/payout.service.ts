@@ -18,7 +18,6 @@ export class PayoutService {
   ) {
     if (!bankDetail) return;
 
-    // The 'add' method is now safely typed
     await this.payoutQueue.add('process-payout', {
       bankDetail,
       amount,
